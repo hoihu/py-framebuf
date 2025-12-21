@@ -524,7 +524,7 @@ class FrameBufferAsmThumb:
 
         return 0
 
-    # Assembly helper for fast memory fill
+    # Assembly helper for fast memory fill (byte-by-byte)
     @staticmethod
     @micropython.asm_thumb
     def _asm_memset(r0, r1, r2):
@@ -538,6 +538,49 @@ class FrameBufferAsmThumb:
         add(r0, 1)
         sub(r2, 1)
         b(LOOP)
+        label(END)
+
+    # Ultra-fast memory fill using 32-bit word writes (4x faster than byte writes)
+    @staticmethod
+    @micropython.asm_thumb
+    def _asm_memset32(r0, r1, r2):
+        # r0 = buffer address (should be 4-byte aligned for best performance)
+        # r1 = byte value (0x00-0xFF)
+        # r2 = number of bytes
+
+        # Replicate byte to 32-bit word: 0xFF -> 0xFFFFFFFF
+        mov(r3, r1)
+        lsl(r3, 8)
+        orr(r1, r3)      # r1 = 0x__FF__FF
+        mov(r3, r1)
+        lsl(r3, 16)
+        orr(r1, r3)      # r1 = 0xFFFFFFFF
+
+        # Calculate word count (r2 >> 2)
+        lsr(r3, r2, 2)   # r3 = number of 32-bit words
+
+        # Process 32-bit words (main loop)
+        label(WORD_LOOP)
+        cmp(r3, 0)
+        beq(BYTE_REMAINDER)
+        str(r1, [r0, 0])  # 32-bit write (4x faster!)
+        add(r0, r0, 4)
+        sub(r3, r3, 1)
+        b(WORD_LOOP)
+
+        # Handle remaining 0-3 bytes
+        label(BYTE_REMAINDER)
+        and_(r2, r2, 3)   # r2 = bytes % 4
+        cmp(r2, 0)
+        beq(END)
+
+        label(BYTE_LOOP)
+        strb(r1, [r0, 0])
+        add(r0, r0, 1)
+        sub(r2, r2, 1)
+        cmp(r2, 0)
+        bne(BYTE_LOOP)
+
         label(END)
 
     # Assembly helper for horizontal line in MONO_VLSB
@@ -562,6 +605,55 @@ class FrameBufferAsmThumb:
         b(LOOP)
         label(END)
 
+    # Ultra-fast row fill for fill_rect optimization (MONO_VLSB)
+    @staticmethod
+    @micropython.asm_thumb
+    def _asm_fill_row_mono(r0, r1, r2):
+        # r0 = buffer address at row start offset
+        # r1 = width in bytes
+        # r2 = fill value (0x00 or 0xFF)
+
+        # For small widths, use byte loop
+        cmp(r1, 4)
+        blt(BYTE_FILL)
+
+        # Replicate byte to 32-bit word
+        mov(r3, r2)
+        lsl(r3, 8)
+        orr(r2, r3)      # r2 = 0x__FF__FF
+        mov(r3, r2)
+        lsl(r3, 16)
+        orr(r2, r3)      # r2 = 0xFFFFFFFF
+
+        # Calculate word count
+        lsr(r3, r1, 2)   # r3 = bytes / 4
+
+        # Word loop for bulk of data
+        label(WORD_FILL)
+        cmp(r3, 0)
+        beq(BYTE_REMAINDER)
+        str(r2, [r0, 0])
+        add(r0, r0, 4)
+        sub(r3, r3, 1)
+        b(WORD_FILL)
+
+        # Handle remainder bytes
+        label(BYTE_REMAINDER)
+        and_(r1, r1, 3)
+        cmp(r1, 0)
+        beq(END)
+
+        # Byte fill for remainder or small widths
+        label(BYTE_FILL)
+        cmp(r1, 0)
+        beq(END)
+        strb(r2, [r0, 0])
+        add(r0, r0, 1)
+        sub(r1, r1, 1)
+        b(BYTE_FILL)
+
+        label(END)
+
     @micropython.native
     def fill(self, c: int):
         """Fill entire framebuffer with color - optimized with asm_thumb helpers"""
@@ -582,15 +674,15 @@ class FrameBufferAsmThumb:
                             # Full byte
                             self.buffer[offset] = 0xFF
             else:
-                # Fill with 0s - use assembly helper for speed
+                # Fill with 0s - use 32-bit word assembly helper for maximum speed
                 buf_addr = int(addressof(self.buffer))
-                self._asm_memset(buf_addr, 0, len(self.buffer))
+                self._asm_memset32(buf_addr, 0, len(self.buffer))
 
         elif self.format == framebuf.MONO_HLSB:
             # Similar logic for MONO_HLSB
             if c:
                 buf_addr = int(addressof(self.buffer))
-                self._asm_memset(buf_addr, 0xFF, len(self.buffer))
+                self._asm_memset32(buf_addr, 0xFF, len(self.buffer))
                 # Handle last byte of each row if width not multiple of 8
                 remaining_bits = self.width % 8
                 if remaining_bits != 0:
@@ -600,7 +692,7 @@ class FrameBufferAsmThumb:
                         self.buffer[row * bytes_per_row + bytes_per_row - 1] = mask
             else:
                 buf_addr = int(addressof(self.buffer))
-                self._asm_memset(buf_addr, 0, len(self.buffer))
+                self._asm_memset32(buf_addr, 0, len(self.buffer))
 
         elif self.format == framebuf.RGB565:
             for i in range(0, len(self.buffer), 2):
@@ -608,7 +700,7 @@ class FrameBufferAsmThumb:
                 self.buffer[i + 1] = (c >> 8) & 0xFF
         elif self.format == framebuf.GS8:
             buf_addr = int(addressof(self.buffer))
-            self._asm_memset(buf_addr, c & 0xFF, len(self.buffer))
+            self._asm_memset32(buf_addr, c & 0xFF, len(self.buffer))
 
     @micropython.native
     def hline(self, x: int, y: int, w: int, c: int):
@@ -678,31 +770,98 @@ class FrameBufferAsmThumb:
             self.vline(x, y, h, c)
             self.vline(x + w - 1, y, h, c)
 
-    @micropython.native
+    @micropython.viper
     def fill_rect(self, x: int, y: int, w: int, h: int, c: int):
-        """Fill rectangle"""
-        for row in range(h):
-            self.hline(x, y + row, w, c)
+        """Fill rectangle - optimized with @viper and inline buffer manipulation"""
+        # Bounds checking
+        if x < 0:
+            w += x
+            x = 0
+        if y < 0:
+            h += y
+            y = 0
 
-    @micropython.native
+        width = int(self.width)
+        height = int(self.height)
+
+        if x >= width or y >= height or w <= 0 or h <= 0:
+            return
+
+        if x + w > width:
+            w = width - x
+        if y + h > height:
+            h = height - y
+
+        # MONO_VLSB format optimization
+        if int(self.format) == 0:  # framebuf.MONO_VLSB = 0
+            buf = ptr8(self.buffer)
+
+            # Determine fill byte
+            fill_byte = uint(0xFF if c else 0x00)
+
+            # Fill row by row with optimized assembly
+            for row in range(h):
+                y_pos = y + row
+                byte_row = uint(y_pos >> 3)
+                offset = uint(byte_row * width + x)
+
+                # Use assembly helper for fast row fill
+                buf_addr = uint(int(addressof(self.buffer)) + offset)
+                self._asm_fill_row_mono(buf_addr, w, fill_byte)
+        else:
+            # Fallback for other formats
+            for row in range(h):
+                self.hline(x, y + row, w, c)
+
+    @micropython.viper
     def line(self, x0: int, y0: int, x1: int, y1: int, c: int):
-        """Draw line using Bresenham's algorithm"""
-        dx = abs(x1 - x0)
-        dy = abs(y1 - y0)
+        """Draw line using Bresenham's algorithm - optimized with @viper and inline pixel writes"""
+        width = int(self.width)
+        height = int(self.height)
+
+        dx = int(abs(x1 - x0))
+        dy = int(abs(y1 - y0))
         sx = 1 if x0 < x1 else -1
         sy = 1 if y0 < y1 else -1
         err = dx - dy
 
-        while True:
-            self.pixel(x0, y0, c)
+        # MONO_VLSB format optimization with inline pixel manipulation
+        if int(self.format) == 0:  # framebuf.MONO_VLSB = 0
+            buf = ptr8(self.buffer)
 
-            if x0 == x1 and y0 == y1:
-                break
+            while True:
+                # Inline pixel set - NO function call overhead!
+                if 0 <= x0 < width and 0 <= y0 < height:
+                    byte_offset = uint((y0 >> 3) * width + x0)
+                    bit_offset = uint(y0 & 7)
 
-            e2 = 2 * err
-            if e2 > -dy:
-                err -= dy
-                x0 += sx
-            if e2 < dx:
-                err += dx
-                y0 += sy
+                    if c:
+                        buf[byte_offset] |= (1 << bit_offset)
+                    else:
+                        buf[byte_offset] &= ~(1 << bit_offset)
+
+                if x0 == x1 and y0 == y1:
+                    break
+
+                e2 = 2 * err
+                if e2 > -dy:
+                    err -= dy
+                    x0 += sx
+                if e2 < dx:
+                    err += dx
+                    y0 += sy
+        else:
+            # Fallback for other formats
+            while True:
+                self.pixel(x0, y0, c)
+
+                if x0 == x1 and y0 == y1:
+                    break
+
+                e2 = 2 * err
+                if e2 > -dy:
+                    err -= dy
+                    x0 += sx
+                if e2 < dx:
+                    err += dx
+                    y0 += sy
