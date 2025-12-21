@@ -525,6 +525,7 @@ class FrameBufferAsmThumb:
         return 0
 
     # Assembly helper for fast memory fill
+    @staticmethod
     @micropython.asm_thumb
     def _asm_memset(r0, r1, r2):
         # r0 = buffer address
@@ -540,6 +541,7 @@ class FrameBufferAsmThumb:
         label(END)
 
     # Assembly helper for horizontal line in MONO_VLSB
+    @staticmethod
     @micropython.asm_thumb
     def _asm_hline_mono_vlsb_set(r0, r1, r2, r3):
         # r0 = buffer base address
