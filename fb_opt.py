@@ -873,3 +873,380 @@ class FrameBufferAsmThumb:
                 if e2 < dx:
                     err += dx
                     y0 += sy
+
+class FrameBufferHybridOptimized:
+    """
+    Hybrid MicroPython framebuffer combining best strategies:
+    - @viper for pixel, hline, vline (inline buffer access)
+    - @asm_thumb helpers for fill operations (32-bit word writes)
+    - @viper for line (inline pixel writes)
+    - Strategic mix for maximum performance
+    """
+
+    def __init__(self, buffer, width, height, format):
+        self.buffer = buffer
+        self.width = width
+        self.height = height
+        self.format = format
+
+        if format == framebuf.MONO_VLSB or format == framebuf.MONO_HLSB:
+            self.bpp = 1
+        elif format == framebuf.RGB565:
+            self.bpp = 16
+        elif format == framebuf.GS4_HMSB:
+            self.bpp = 4
+        elif format == framebuf.GS8:
+            self.bpp = 8
+        else:
+            self.bpp = 1
+
+    # ========================================================================
+    # ASM THUMB HELPERS (shared from FrameBufferAsmThumb)
+    # ========================================================================
+
+    @staticmethod
+    @micropython.asm_thumb
+    def _asm_memset32(r0, r1, r2):
+        # r0 = buffer address
+        # r1 = byte value (0x00-0xFF)
+        # r2 = number of bytes
+
+        # Replicate byte to 32-bit word: 0xFF -> 0xFFFFFFFF
+        mov(r3, r1)
+        lsl(r3, r3, 8)
+        orr(r1, r3)
+        mov(r3, r1)
+        lsl(r3, r3, 16)
+        orr(r1, r3)
+
+        # Calculate word count (r2 >> 2)
+        lsr(r3, r2, 2)
+
+        # Process 32-bit words (main loop)
+        label(WORD_LOOP)
+        cmp(r3, 0)
+        beq(BYTE_REMAINDER)
+        str(r1, [r0, 0])
+        add(r0, r0, 4)
+        sub(r3, r3, 1)
+        b(WORD_LOOP)
+
+        # Handle remaining 0-3 bytes
+        label(BYTE_REMAINDER)
+        mov(r4, 3)
+        and_(r2, r4)
+        cmp(r2, 0)
+        beq(END)
+
+        label(BYTE_LOOP)
+        strb(r1, [r0, 0])
+        add(r0, r0, 1)
+        sub(r2, r2, 1)
+        cmp(r2, 0)
+        bne(BYTE_LOOP)
+
+        label(END)
+
+    # ========================================================================
+    # VIPER-OPTIMIZED PRIMITIVES
+    # ========================================================================
+
+    @micropython.viper
+    def pixel(self, x: int, y: int, c: int = -1) -> int:
+        """Set or get pixel value - @viper with inline buffer access"""
+        width = int(self.width)
+        height = int(self.height)
+
+        if x < 0 or x >= width or y < 0 or y >= height:
+            return 0
+
+        # MONO_VLSB format
+        if int(self.format) == 0:  # framebuf.MONO_VLSB = 0
+            buf = ptr8(self.buffer)
+            byte_offset = uint((y >> 3) * width + x)
+            bit_offset = uint(y & 7)
+
+            if c == -1:
+                return int((buf[byte_offset] >> bit_offset) & 1)
+            else:
+                if c:
+                    buf[byte_offset] |= (1 << bit_offset)
+                else:
+                    buf[byte_offset] &= ~(1 << bit_offset)
+                return 0
+
+        # RGB565 format
+        elif int(self.format) == 1:  # framebuf.RGB565 = 1
+            buf = ptr8(self.buffer)
+            offset = uint((y * width + x) * 2)
+            if c == -1:
+                return int(buf[offset] | (buf[offset + 1] << 8))
+            else:
+                buf[offset] = c & 0xFF
+                buf[offset + 1] = (c >> 8) & 0xFF
+                return 0
+
+        # GS8 format
+        elif int(self.format) == 5:  # framebuf.GS8 = 5
+            buf = ptr8(self.buffer)
+            offset = uint(y * width + x)
+            if c == -1:
+                return int(buf[offset])
+            else:
+                buf[offset] = c & 0xFF
+                return 0
+
+        return 0
+
+    @micropython.viper
+    def hline(self, x: int, y: int, w: int, c: int):
+        """Draw horizontal line - @viper with inline bit manipulation"""
+        width = int(self.width)
+        height = int(self.height)
+
+        if y < 0 or y >= height or x >= width:
+            return
+
+        if x < 0:
+            w += x
+            x = 0
+
+        if x + w > width:
+            w = width - x
+
+        if w <= 0:
+            return
+
+        # MONO_VLSB format optimization
+        if int(self.format) == 0:  # framebuf.MONO_VLSB = 0
+            buf = ptr8(self.buffer)
+            byte_row = uint(y >> 3)
+            bit_offset = uint(y & 7)
+            mask = uint(1 << bit_offset)
+            offset = uint(byte_row * width + x)
+
+            if c:
+                # Set bits
+                for i in range(w):
+                    buf[offset + i] |= mask
+            else:
+                # Clear bits
+                inv_mask = uint(~mask & 0xFF)
+                for i in range(w):
+                    buf[offset + i] &= inv_mask
+        else:
+            # Fallback for other formats
+            for i in range(w):
+                self.pixel(x + i, y, c)
+
+    @micropython.viper
+    def vline(self, x: int, y: int, h: int, c: int):
+        """Draw vertical line - @viper with inline pixel writes"""
+        width = int(self.width)
+        height = int(self.height)
+
+        if x < 0 or x >= width or y >= height:
+            return
+
+        if y < 0:
+            h += y
+            y = 0
+
+        if y + h > height:
+            h = height - y
+
+        if h <= 0:
+            return
+
+        # MONO_VLSB format optimization
+        if int(self.format) == 0:  # framebuf.MONO_VLSB = 0
+            buf = ptr8(self.buffer)
+
+            for i in range(h):
+                y_pos = y + i
+                byte_offset = uint((y_pos >> 3) * width + x)
+                bit_offset = uint(y_pos & 7)
+
+                if c:
+                    buf[byte_offset] |= (1 << bit_offset)
+                else:
+                    buf[byte_offset] &= ~(1 << bit_offset)
+        else:
+            # Fallback for other formats
+            for i in range(h):
+                self.pixel(x, y + i, c)
+
+    # ========================================================================
+    # FILL OPERATIONS (Viper + ASM helpers)
+    # ========================================================================
+
+    @micropython.viper
+    def fill(self, c: int):
+        """Fill entire framebuffer - @viper calling @asm_thumb for bulk operations"""
+        format_val = int(self.format)
+
+        if format_val == 0:  # MONO_VLSB
+            num_byte_rows = int((int(self.height) + 7) >> 3)
+            remaining_bits = int(self.height) & 7
+
+            if c:
+                # Fill with 1s using optimized memset32
+                buf_addr = int(addressof(self.buffer))
+                self._asm_memset32(buf_addr, 0xFF, len(self.buffer))
+
+                # Handle partial bits in last byte row if needed
+                if remaining_bits != 0:
+                    buf = ptr8(self.buffer)
+                    mask = uint((1 << remaining_bits) - 1)
+                    width = int(self.width)
+                    offset_base = uint((num_byte_rows - 1) * width)
+                    
+                    for col in range(width):
+                        buf[offset_base + col] = mask
+            else:
+                # Fill with 0s
+                buf_addr = int(addressof(self.buffer))
+                self._asm_memset32(buf_addr, 0, len(self.buffer))
+
+        elif format_val == 4:  # MONO_HLSB
+            if c:
+                buf_addr = int(addressof(self.buffer))
+                self._asm_memset32(buf_addr, 0xFF, len(self.buffer))
+                
+                # Handle last byte of each row if width not multiple of 8
+                remaining_bits = int(self.width) & 7
+                if remaining_bits != 0:
+                    buf = ptr8(self.buffer)
+                    mask = uint((1 << remaining_bits) - 1)
+                    bytes_per_row = int((int(self.width) + 7) >> 3)
+                    height = int(self.height)
+                    
+                    for row in range(height):
+                        buf[row * bytes_per_row + bytes_per_row - 1] = mask
+            else:
+                buf_addr = int(addressof(self.buffer))
+                self._asm_memset32(buf_addr, 0, len(self.buffer))
+
+        elif format_val == 1:  # RGB565
+            buf = ptr8(self.buffer)
+            buf_len = len(self.buffer)
+            for i in range(0, buf_len, 2):
+                buf[i] = c & 0xFF
+                buf[i + 1] = (c >> 8) & 0xFF
+
+        elif format_val == 5:  # GS8
+            buf_addr = int(addressof(self.buffer))
+            self._asm_memset32(buf_addr, c & 0xFF, len(self.buffer))
+
+    @micropython.viper
+    def fill_rect(self, x: int, y: int, w: int, h: int, c: int):
+        """Fill rectangle - @viper with inline bit manipulation"""
+        # Bounds checking
+        if x < 0:
+            w += x
+            x = 0
+        if y < 0:
+            h += y
+            y = 0
+
+        width = int(self.width)
+        height = int(self.height)
+
+        if x >= width or y >= height or w <= 0 or h <= 0:
+            return
+
+        if x + w > width:
+            w = width - x
+        if y + h > height:
+            h = height - y
+
+        # MONO_VLSB format optimization with inline bit manipulation
+        if int(self.format) == 0:  # framebuf.MONO_VLSB = 0
+            buf = ptr8(self.buffer)
+
+            # For each row, set the appropriate bit in each byte
+            for row in range(h):
+                y_pos = y + row
+                byte_row = uint(y_pos >> 3)
+                bit_offset = uint(y_pos & 7)
+                mask = uint(1 << bit_offset)
+                offset = uint(byte_row * width + x)
+
+                # Inline bit manipulation for each pixel in the row
+                if c:
+                    # Set bits
+                    for i in range(w):
+                        buf[offset + i] |= mask
+                else:
+                    # Clear bits
+                    inv_mask = uint(~mask & 0xFF)
+                    for i in range(w):
+                        buf[offset + i] &= inv_mask
+        else:
+            # Fallback for other formats
+            for row in range(h):
+                self.hline(x, y + row, w, c)
+
+    @micropython.viper
+    def line(self, x0: int, y0: int, x1: int, y1: int, c: int):
+        """Draw line using Bresenham's algorithm - @viper with inline pixel writes"""
+        width = int(self.width)
+        height = int(self.height)
+
+        dx = int(abs(x1 - x0))
+        dy = int(abs(y1 - y0))
+        sx = 1 if x0 < x1 else -1
+        sy = 1 if y0 < y1 else -1
+        err = dx - dy
+
+        # MONO_VLSB format optimization with inline pixel manipulation
+        if int(self.format) == 0:  # framebuf.MONO_VLSB = 0
+            buf = ptr8(self.buffer)
+
+            while True:
+                # Inline pixel set - NO function call overhead!
+                if 0 <= x0 < width and 0 <= y0 < height:
+                    byte_offset = uint((y0 >> 3) * width + x0)
+                    bit_offset = uint(y0 & 7)
+
+                    if c:
+                        buf[byte_offset] |= (1 << bit_offset)
+                    else:
+                        buf[byte_offset] &= ~(1 << bit_offset)
+
+                if x0 == x1 and y0 == y1:
+                    break
+
+                e2 = 2 * err
+                if e2 > -dy:
+                    err -= dy
+                    x0 += sx
+                if e2 < dx:
+                    err += dx
+                    y0 += sy
+        else:
+            # Fallback for other formats
+            while True:
+                self.pixel(x0, y0, c)
+
+                if x0 == x1 and y0 == y1:
+                    break
+
+                e2 = 2 * err
+                if e2 > -dy:
+                    err -= dy
+                    x0 += sx
+                if e2 < dx:
+                    err += dx
+                    y0 += sy
+
+    @micropython.viper
+    def rect(self, x: int, y: int, w: int, h: int, c: int, fill: bool = False):
+        """Draw rectangle - @viper"""
+        if fill:
+            self.fill_rect(x, y, w, h, c)
+        else:
+            self.hline(x, y, w, c)
+            self.hline(x, y + h - 1, w, c)
+            self.vline(x, y, h, c)
+            self.vline(x + w - 1, y, h, c)

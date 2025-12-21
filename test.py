@@ -8,12 +8,12 @@ import gc
 
 # Local import - works when files are in same directory
 try:
-    from fb_opt import FrameBufferPure, FrameBufferNative, FrameBufferAsmThumb
+    from fb_opt import FrameBufferPure, FrameBufferNative, FrameBufferAsmThumb, FrameBufferHybridOptimized
 except ImportError:
     # Try parent directory if in tests subdirectory
     import sys
     sys.path.insert(0, '..')
-    from fb_opt import FrameBufferPure, FrameBufferNative, FrameBufferAsmThumb
+    from fb_opt import FrameBufferPure, FrameBufferNative, FrameBufferAsmThumb, FrameBufferHybridOptimized
 
 
 class BenchmarkRunner:
@@ -53,7 +53,11 @@ class BenchmarkRunner:
         buf_asm = bytearray(self.buffer_size)
         fb_asm = FrameBufferAsmThumb(buf_asm, self.width, self.height, self.format)
 
-        return (fb_builtin, buf_c), (fb_viper, buf_viper), (fb_native, buf_native), (fb_asm, buf_asm)
+        # Hybrid Optimized implementation
+        buf_hybrid = bytearray(self.buffer_size)
+        fb_hybrid = FrameBufferHybridOptimized(buf_hybrid, self.width, self.height, self.format)
+
+        return (fb_builtin, buf_c), (fb_viper, buf_viper), (fb_native, buf_native), (fb_asm, buf_asm), (fb_hybrid, buf_hybrid)
 
     def time_operation(self, func, iterations=1000):
         """Time an operation with garbage collection"""
@@ -64,8 +68,8 @@ class BenchmarkRunner:
         end = time.ticks_us()
         return time.ticks_diff(end, start)
 
-    def verify_buffers_match(self, buf1, buf2, buf3, buf4, test_name):
-        """Verify all four buffers have identical content"""
+    def verify_buffers_match(self, buf1, buf2, buf3, buf4, buf5, test_name):
+        """Verify all five buffers have identical content"""
         if buf1 != buf2:
             print("  ⚠ MISMATCH: C vs Viper in {}".format(test_name))
             return False
@@ -75,14 +79,8 @@ class BenchmarkRunner:
         if buf1 != buf4:
             print("  ⚠ MISMATCH: C vs AsmThumb in {}".format(test_name))
             return False
-        if buf2 != buf3:
-            print("  ⚠ MISMATCH: Viper vs Native in {}".format(test_name))
-            return False
-        if buf2 != buf4:
-            print("  ⚠ MISMATCH: Viper vs AsmThumb in {}".format(test_name))
-            return False
-        if buf3 != buf4:
-            print("  ⚠ MISMATCH: Native vs AsmThumb in {}".format(test_name))
+        if buf1 != buf5:
+            print("  ⚠ MISMATCH: C vs Hybrid in {}".format(test_name))
             return False
         return True
 
@@ -96,27 +94,30 @@ class BenchmarkRunner:
         print("=" * 60)
 
         # Create framebuffers
-        (fb_c, buf_c), (fb_viper, buf_viper), (fb_native, buf_native), (fb_asm, buf_asm) = self.create_framebuffers()
+        (fb_c, buf_c), (fb_viper, buf_viper), (fb_native, buf_native), (fb_asm, buf_asm), (fb_hybrid, buf_hybrid) = self.create_framebuffers()
 
         # Setup operations
         op_c = setup_func(fb_c, buf_c)
         op_viper = setup_func(fb_viper, buf_viper)
         op_native = setup_func(fb_native, buf_native)
         op_asm = setup_func(fb_asm, buf_asm)
+        op_hybrid = setup_func(fb_hybrid, buf_hybrid)
 
         # Run benchmarks
         time_c = self.time_operation(op_c, iterations)
         time_viper = self.time_operation(op_viper, iterations)
         time_native = self.time_operation(op_native, iterations)
         time_asm = self.time_operation(op_asm, iterations)
+        time_hybrid = self.time_operation(op_hybrid, iterations)
 
         # Verify outputs match
-        match = self.verify_buffers_match(buf_c, buf_viper, buf_native, buf_asm, name)
+        match = self.verify_buffers_match(buf_c, buf_viper, buf_native, buf_asm, buf_hybrid, name)
 
         # Calculate relative performance
         speedup_viper = (time_c / time_viper) if time_viper > 0 else 0
         speedup_native = (time_c / time_native) if time_native > 0 else 0
         speedup_asm = (time_c / time_asm) if time_asm > 0 else 0
+        speedup_hybrid = (time_c / time_hybrid) if time_hybrid > 0 else 0
 
         # Display results
         print("Iterations: {}".format(iterations))
@@ -125,6 +126,7 @@ class BenchmarkRunner:
         print("  Viper:            {:>10} µs  ({:.2f}x)".format(time_viper, speedup_viper))
         print("  Native:           {:>10} µs  ({:.2f}x)".format(time_native, speedup_native))
         print("  AsmThumb:         {:>10} µs  ({:.2f}x)".format(time_asm, speedup_asm))
+        print("  Hybrid:           {:>10} µs  ({:.2f}x)".format(time_hybrid, speedup_hybrid))
         print("\nOutput verification: {}".format('✓ PASS' if match else '✗ FAIL'))
 
         # Store results
@@ -135,9 +137,11 @@ class BenchmarkRunner:
             'time_viper': time_viper,
             'time_native': time_native,
             'time_asm': time_asm,
+            'time_hybrid': time_hybrid,
             'speedup_viper': speedup_viper,
             'speedup_native': speedup_native,
             'speedup_asm': speedup_asm,
+            'speedup_hybrid': speedup_hybrid,
             'match': match
         }
         self.results.append(result)
@@ -266,25 +270,26 @@ class BenchmarkRunner:
         print("# BENCHMARK SUMMARY")
         print("#" * 60 + "\n")
 
-        print("{:<40} {:<12} {:<12} {:<12} {:<12} {:<10} {:<10} {:<10} {}".format(
-            'Test', 'C (µs)', 'Viper', 'Native', 'AsmThumb', 'V-Speed', 'N-Speed', 'A-Speed', 'Match'))
-        print("-" * 140)
+        print("{:<40} {:<12} {:<12} {:<12} {:<12} {:<12} {:<10} {:<10} {:<10} {:<10} {}".format(
+            'Test', 'C (µs)', 'Viper', 'Native', 'AsmThumb', 'Hybrid', 'V-Speed', 'N-Speed', 'A-Speed', 'H-Speed', 'Match'))
+        print("-" * 155)
 
         for r in self.results:
             match_symbol = "✓" if r['match'] else "✗"
-            print("{:<40} {:<12} {:<12} {:<12} {:<12} {:<10.2f} {:<10.2f} {:<10.2f} {}".format(
-                r['name'], r['time_c'], r['time_viper'], r['time_native'], r['time_asm'],
-                r['speedup_viper'], r['speedup_native'], r['speedup_asm'], match_symbol))
+            print("{:<40} {:<12} {:<12} {:<12} {:<12} {:<12} {:<10.2f} {:<10.2f} {:<10.2f} {:<10.2f} {}".format(
+                r['name'], r['time_c'], r['time_viper'], r['time_native'], r['time_asm'], r['time_hybrid'],
+                r['speedup_viper'], r['speedup_native'], r['speedup_asm'], r['speedup_hybrid'], match_symbol))
 
         # Calculate averages
         avg_viper = sum(r['speedup_viper'] for r in self.results) / len(self.results)
         avg_native = sum(r['speedup_native'] for r in self.results) / len(self.results)
         avg_asm = sum(r['speedup_asm'] for r in self.results) / len(self.results)
+        avg_hybrid = sum(r['speedup_hybrid'] for r in self.results) / len(self.results)
         all_match = all(r['match'] for r in self.results)
 
-        print("-" * 140)
-        print("{:<40} {:<12} {:<12} {:<12} {:<12} {:<10.2f} {:<10.2f} {:<10.2f}".format(
-            'AVERAGE SPEEDUP:', '', '', '', '', avg_viper, avg_native, avg_asm))
+        print("-" * 155)
+        print("{:<40} {:<12} {:<12} {:<12} {:<12} {:<12} {:<10.2f} {:<10.2f} {:<10.2f} {:<10.2f}".format(
+            'AVERAGE SPEEDUP:', '', '', '', '', '', avg_viper, avg_native, avg_asm, avg_hybrid))
         print("\nOverall verification: {}".format('✓ ALL TESTS PASSED' if all_match else '✗ SOME TESTS FAILED'))
 
 
@@ -322,11 +327,13 @@ def quick_test():
     buf_viper = bytearray(buffer_size)
     buf_native = bytearray(buffer_size)
     buf_asm = bytearray(buffer_size)
+    buf_hybrid = bytearray(buffer_size)
 
     fb_builtin = framebuf.FrameBuffer(buf_c, width, height, fmt)
     fb_viper = FrameBufferPure(buf_viper, width, height, fmt)
     fb_native = FrameBufferNative(buf_native, width, height, fmt)
     fb_asm = FrameBufferAsmThumb(buf_asm, width, height, fmt)
+    fb_hybrid = FrameBufferHybridOptimized(buf_hybrid, width, height, fmt)
 
     # Test operations
     tests = [
@@ -342,7 +349,7 @@ def quick_test():
     all_pass = True
     for test_name, op in tests:
         # Clear buffers
-        for b in [buf_c, buf_viper, buf_native, buf_asm]:
+        for b in [buf_c, buf_viper, buf_native, buf_asm, buf_hybrid]:
             for i in range(len(b)):
                 b[i] = 0
 
@@ -351,9 +358,10 @@ def quick_test():
         op(fb_viper)
         op(fb_native)
         op(fb_asm)
+        op(fb_hybrid)
 
         # Verify
-        if buf_c == buf_viper == buf_native == buf_asm:
+        if buf_c == buf_viper == buf_native == buf_asm == buf_hybrid:
             print("  ✓ {}".format(test_name))
         else:
             print("  ✗ {} - buffers don't match!".format(test_name))
