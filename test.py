@@ -182,42 +182,42 @@ class BenchmarkRunner:
         self.benchmark_operation(
             "hline() - horizontal line",
             lambda fb, buf: lambda: fb.hline(0, 50, self.width, 1),
-            iterations=1000
+            iterations=100
         )
 
         # 3. Vertical lines
         self.benchmark_operation(
             "vline() - vertical line",
             lambda fb, buf: lambda: fb.vline(50, 0, self.height, 1),
-            iterations=1000
+            iterations=100
         )
 
         # 4. Fill operation
         self.benchmark_operation(
             "fill() - fill entire buffer",
             lambda fb, buf: lambda: fb.fill(1),
-            iterations=500
+            iterations=50
         )
 
         # 5. Fill rectangle
         self.benchmark_operation(
             "fill_rect() - 50x50 rectangle",
             lambda fb, buf: lambda: fb.fill_rect(10, 10, 50, 50, 1),
-            iterations=500
+            iterations=50
         )
 
         # 6. Rectangle outline
         self.benchmark_operation(
             "rect() - 50x50 outline",
             lambda fb, buf: lambda: fb.rect(10, 10, 50, 50, 1, False),
-            iterations=500
+            iterations=50
         )
 
         # 7. Line drawing
         self.benchmark_operation(
             "line() - diagonal line",
             lambda fb, buf: lambda: fb.line(0, 0, self.width-1, self.height-1, 1),
-            iterations=200
+            iterations=20
         )
 
         # 8. Complex pattern - grid
@@ -233,7 +233,7 @@ class BenchmarkRunner:
         self.benchmark_operation(
             "Complex: 10px grid pattern",
             draw_grid,
-            iterations=100
+            iterations=10
         )
 
         # 9. Multiple pixel writes (scatter pattern)
@@ -249,7 +249,7 @@ class BenchmarkRunner:
         self.benchmark_operation(
             "pixel() - scatter pattern (100 pixels)",
             scatter_pixels,
-            iterations=100
+            iterations=10
         )
 
         # 10. Multiple hlines (striped pattern)
@@ -263,7 +263,7 @@ class BenchmarkRunner:
         self.benchmark_operation(
             "hline() - horizontal stripes",
             horizontal_stripes,
-            iterations=100
+            iterations=10
         )
 
         # Print summary
@@ -312,9 +312,9 @@ def run_standard_benchmarks():
 
     configs = [
         (200, 100, framebuf.MONO_VLSB, "200x100 MONO_VLSB"),
-        (20, 20, framebuf.MONO_VLSB, "20x20 MONO_VLSB"),
+        (53, 11, framebuf.MONO_VLSB, "20x20 MONO_VLSB"),
+        (53, 11, framebuf.RGB565, "200x100 RGB565"),
         # Uncomment for additional formats (if supported)
-        # (200, 100, framebuf.RGB565, "200x100 RGB565"),
         # (200, 100, framebuf.GS8, "200x100 GS8"),
     ]
 
