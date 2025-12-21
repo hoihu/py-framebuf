@@ -550,10 +550,10 @@ class FrameBufferAsmThumb:
 
         # Replicate byte to 32-bit word: 0xFF -> 0xFFFFFFFF
         mov(r3, r1)
-        lsl(r3, 8)
+        lsl(r3, r3, 8)
         orr(r1, r3)      # r1 = 0x__FF__FF
         mov(r3, r1)
-        lsl(r3, 16)
+        lsl(r3, r3, 16)
         orr(r1, r3)      # r1 = 0xFFFFFFFF
 
         # Calculate word count (r2 >> 2)
@@ -619,10 +619,10 @@ class FrameBufferAsmThumb:
 
         # Replicate byte to 32-bit word
         mov(r3, r2)
-        lsl(r3, 8)
+        lsl(r3, r3, 8)
         orr(r2, r3)      # r2 = 0x__FF__FF
         mov(r3, r2)
-        lsl(r3, 16)
+        lsl(r3, r3, 16)
         orr(r2, r3)      # r2 = 0xFFFFFFFF
 
         # Calculate word count
