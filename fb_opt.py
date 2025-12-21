@@ -1070,14 +1070,14 @@ class FrameBufferHybridOptimized:
 
             if c:
                 for i in range(w):
-                    bit_pos = uint((bit_start + i) & 7)
-                    if bit_pos == 0 and i > 0:
+                    bit_pos = uint((bit_start + uint(i)) & 7)
+                    if int(bit_pos) == 0 and i > 0:
                         offset += 1
                     buf[offset] |= (1 << bit_pos)
             else:
                 for i in range(w):
-                    bit_pos = uint((bit_start + i) & 7)
-                    if bit_pos == 0 and i > 0:
+                    bit_pos = uint((bit_start + uint(i)) & 7)
+                    if int(bit_pos) == 0 and i > 0:
                         offset += 1
                     buf[offset] &= uint(~(1 << bit_pos) & 0xFF)
 
