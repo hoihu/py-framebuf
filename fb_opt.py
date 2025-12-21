@@ -1240,10 +1240,10 @@ class FrameBufferHybridOptimized:
                     err += dx
                     y0 += sy
 
-    @micropython.viper
-    def rect(self, x: int, y: int, w: int, h: int, c: int, fill: bool = False):
-        """Draw rectangle - @viper"""
-        if fill:
+    @micropython.native
+    def rect(self, x: int, y: int, w: int, h: int, c: int, fill_rect: bool = False):
+        """Draw rectangle - @native (viper doesn't support default args)"""
+        if fill_rect:
             self.fill_rect(x, y, w, h, c)
         else:
             self.hline(x, y, w, c)
