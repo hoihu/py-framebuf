@@ -997,7 +997,7 @@ class FrameBufferHybridOptimized:
                 return int((buf[offset] >> bit_offset) & 1)
             else:
                 if c:
-                    buf[offset] |= (1 << bit_offset)
+                    buf[offset] |= uint(1 << bit_offset)
                 else:
                     buf[offset] &= uint(~(1 << bit_offset) & 0xFF)
                 return 0
@@ -1073,7 +1073,7 @@ class FrameBufferHybridOptimized:
                     bit_pos = uint((bit_start + uint(i)) & 7)
                     if int(bit_pos) == 0 and i > 0:
                         offset += 1
-                    buf[offset] |= (1 << bit_pos)
+                    buf[offset] |= uint(1 << bit_pos)
             else:
                 for i in range(w):
                     bit_pos = uint((bit_start + uint(i)) & 7)
@@ -1148,7 +1148,7 @@ class FrameBufferHybridOptimized:
             if c:
                 for i in range(h):
                     offset = uint((y + i) * bytes_per_row + byte_offset)
-                    buf[offset] |= (1 << bit_pos)
+                    buf[offset] |= uint(1 << bit_pos)
             else:
                 mask = uint(~(1 << bit_pos) & 0xFF)
                 for i in range(h):

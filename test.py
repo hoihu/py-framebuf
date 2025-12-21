@@ -401,6 +401,16 @@ def quick_test():
                 print("  ✓ {}".format(test_name))
             else:
                 print("  ✗ {} - buffers don't match!".format(test_name))
+                # Show first differences for debugging
+                if buf_c != buf_hybrid:
+                    print("    C vs Hybrid - First 5 differences:")
+                    count = 0
+                    for i in range(min(len(buf_c), len(buf_hybrid))):
+                        if buf_c[i] != buf_hybrid[i]:
+                            print("      [{}]: C=0x{:02x} Hybrid=0x{:02x}".format(i, buf_c[i], buf_hybrid[i]))
+                            count += 1
+                            if count >= 5:
+                                break
                 format_pass = False
                 overall_pass = False
 
