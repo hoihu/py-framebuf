@@ -1240,13 +1240,90 @@ class FrameBufferHybridOptimized:
                     err += dx
                     y0 += sy
 
-    @micropython.native
-    def rect(self, x: int, y: int, w: int, h: int, c: int, fill_rect: bool = False):
-        """Draw rectangle - @native (viper doesn't support default args)"""
-        if fill_rect:
-            self.fill_rect(x, y, w, h, c)
+    @micropython.viper
+    def _rect_outline(self, x: int, y: int, w: int, h: int, c: int):
+        """Draw rectangle outline - optimized @viper with inlined edge drawing"""
+        width = int(self.width)
+        height = int(self.height)
+
+        # Bounds checking once for entire rectangle
+        if x < 0 or y < 0 or x >= width or y >= height or w <= 0 or h <= 0:
+            return
+
+        # Clamp to buffer boundaries
+        if x + w > width:
+            w = width - x
+        if y + h > height:
+            h = height - y
+
+        # MONO_VLSB format optimization with inlined edge drawing
+        if int(self.format) == 0:  # framebuf.MONO_VLSB = 0
+            buf = ptr8(self.buffer)
+
+            # Draw top horizontal edge (y)
+            byte_row_top = uint(y >> 3)
+            bit_offset_top = uint(y & 7)
+            mask_top = uint(1 << bit_offset_top)
+            offset_top = uint(byte_row_top * width + x)
+
+            if c:
+                for i in range(w):
+                    buf[offset_top + i] |= mask_top
+            else:
+                inv_mask_top = uint(~mask_top & 0xFF)
+                for i in range(w):
+                    buf[offset_top + i] &= inv_mask_top
+
+            # Draw bottom horizontal edge (y + h - 1)
+            if h > 1:
+                y_bottom = y + h - 1
+                byte_row_bottom = uint(y_bottom >> 3)
+                bit_offset_bottom = uint(y_bottom & 7)
+                mask_bottom = uint(1 << bit_offset_bottom)
+                offset_bottom = uint(byte_row_bottom * width + x)
+
+                if c:
+                    for i in range(w):
+                        buf[offset_bottom + i] |= mask_bottom
+                else:
+                    inv_mask_bottom = uint(~mask_bottom & 0xFF)
+                    for i in range(w):
+                        buf[offset_bottom + i] &= inv_mask_bottom
+
+            # Draw left vertical edge (x)
+            for i in range(h):
+                y_pos = y + i
+                byte_offset = uint((y_pos >> 3) * width + x)
+                bit_offset = uint(y_pos & 7)
+
+                if c:
+                    buf[byte_offset] |= (1 << bit_offset)
+                else:
+                    buf[byte_offset] &= ~(1 << bit_offset)
+
+            # Draw right vertical edge (x + w - 1)
+            if w > 1:
+                x_right = x + w - 1
+                for i in range(h):
+                    y_pos = y + i
+                    byte_offset = uint((y_pos >> 3) * width + x_right)
+                    bit_offset = uint(y_pos & 7)
+
+                    if c:
+                        buf[byte_offset] |= (1 << bit_offset)
+                    else:
+                        buf[byte_offset] &= ~(1 << bit_offset)
         else:
+            # Fallback for other formats - use method calls
             self.hline(x, y, w, c)
             self.hline(x, y + h - 1, w, c)
             self.vline(x, y, h, c)
             self.vline(x + w - 1, y, h, c)
+
+    @micropython.native
+    def rect(self, x: int, y: int, w: int, h: int, c: int, fill_rect: bool = False):
+        """Draw rectangle - @native wrapper with default parameter support"""
+        if fill_rect:
+            self.fill_rect(x, y, w, h, c)
+        else:
+            self._rect_outline(x, y, w, h, c)
