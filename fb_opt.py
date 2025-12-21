@@ -570,7 +570,8 @@ class FrameBufferAsmThumb:
 
         # Handle remaining 0-3 bytes
         label(BYTE_REMAINDER)
-        and_(r2, r2, 3)   # r2 = bytes % 4
+        mov(r4, 3)        # Load constant 3 into r4
+        and_(r2, r4)      # r2 &= 3 (bytes % 4)
         cmp(r2, 0)
         beq(END)
 
@@ -639,7 +640,8 @@ class FrameBufferAsmThumb:
 
         # Handle remainder bytes
         label(BYTE_REMAINDER)
-        and_(r1, r1, 3)
+        mov(r4, 3)        # Load constant 3 into r4
+        and_(r1, r4)      # r1 &= 3 (bytes % 4)
         cmp(r1, 0)
         beq(END)
 
