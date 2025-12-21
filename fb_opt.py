@@ -1295,11 +1295,12 @@ class FrameBufferHybridOptimized:
                 y_pos = y + i
                 byte_offset = uint((y_pos >> 3) * width + x)
                 bit_offset = uint(y_pos & 7)
+                mask = uint(1 << bit_offset)
 
                 if c:
-                    buf[byte_offset] |= (1 << bit_offset)
+                    buf[byte_offset] |= mask
                 else:
-                    buf[byte_offset] &= uint(~(1 << bit_offset) & 0xFF)
+                    buf[byte_offset] &= uint(~mask & 0xFF)
 
             # Draw right vertical edge (x + w - 1)
             if w > 1:
@@ -1308,11 +1309,12 @@ class FrameBufferHybridOptimized:
                     y_pos = y + i
                     byte_offset = uint((y_pos >> 3) * width + x_right)
                     bit_offset = uint(y_pos & 7)
+                    mask = uint(1 << bit_offset)
 
                     if c:
-                        buf[byte_offset] |= (1 << bit_offset)
+                        buf[byte_offset] |= mask
                     else:
-                        buf[byte_offset] &= uint(~(1 << bit_offset) & 0xFF)
+                        buf[byte_offset] &= uint(~mask & 0xFF)
         else:
             # Fallback for other formats - use method calls
             self.hline(x, y, w, c)
