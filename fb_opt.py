@@ -665,16 +665,16 @@ class FrameBufferAsmThumb:
             remaining_bits = self.height % 8
 
             if c:
-                # Fill with 1s
-                for col in range(self.width):
-                    for byte_row in range(num_byte_rows):
-                        offset = byte_row * self.width + col
-                        if byte_row == num_byte_rows - 1 and remaining_bits != 0:
-                            # Last byte row with partial bits
-                            self.buffer[offset] = (1 << remaining_bits) - 1
-                        else:
-                            # Full byte
-                            self.buffer[offset] = 0xFF
+                # Fill with 1s - use optimized memset32
+                buf_addr = int(addressof(self.buffer))
+                self._asm_memset32(buf_addr, 0xFF, len(self.buffer))
+
+                # Handle partial bits in last byte row if needed
+                if remaining_bits != 0:
+                    mask = (1 << remaining_bits) - 1
+                    for col in range(self.width):
+                        offset = (num_byte_rows - 1) * self.width + col
+                        self.buffer[offset] = mask
             else:
                 # Fill with 0s - use 32-bit word assembly helper for maximum speed
                 buf_addr = int(addressof(self.buffer))
@@ -774,7 +774,7 @@ class FrameBufferAsmThumb:
 
     @micropython.viper
     def fill_rect(self, x: int, y: int, w: int, h: int, c: int):
-        """Fill rectangle - optimized with @viper and inline buffer manipulation"""
+        """Fill rectangle - optimized with @viper and inline bit manipulation"""
         # Bounds checking
         if x < 0:
             w += x
@@ -794,22 +794,28 @@ class FrameBufferAsmThumb:
         if y + h > height:
             h = height - y
 
-        # MONO_VLSB format optimization
+        # MONO_VLSB format optimization with inline bit manipulation
         if int(self.format) == 0:  # framebuf.MONO_VLSB = 0
             buf = ptr8(self.buffer)
 
-            # Determine fill byte
-            fill_byte = uint(0xFF if c else 0x00)
-
-            # Fill row by row with optimized assembly
+            # For each row, set the appropriate bit in each byte
             for row in range(h):
                 y_pos = y + row
                 byte_row = uint(y_pos >> 3)
+                bit_offset = uint(y_pos & 7)
+                mask = uint(1 << bit_offset)
                 offset = uint(byte_row * width + x)
 
-                # Use assembly helper for fast row fill
-                buf_addr = uint(int(addressof(self.buffer)) + offset)
-                self._asm_fill_row_mono(buf_addr, w, fill_byte)
+                # Inline bit manipulation for each pixel in the row
+                if c:
+                    # Set bits
+                    for i in range(w):
+                        buf[offset + i] |= mask
+                else:
+                    # Clear bits
+                    inv_mask = uint(~mask & 0xFF)
+                    for i in range(w):
+                        buf[offset + i] &= inv_mask
         else:
             # Fallback for other formats
             for row in range(h):
