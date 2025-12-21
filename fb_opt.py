@@ -1084,6 +1084,7 @@ class FrameBufferHybridOptimized:
     def fill(self, c: int):
         """Fill entire framebuffer - @viper calling @asm_thumb for bulk operations"""
         format_val = int(self.format)
+        buf_len = int(len(self.buffer))
 
         if format_val == 0:  # MONO_VLSB
             num_byte_rows = int((int(self.height) + 7) >> 3)
@@ -1092,7 +1093,7 @@ class FrameBufferHybridOptimized:
             if c:
                 # Fill with 1s using optimized memset32
                 buf_addr = int(addressof(self.buffer))
-                self._asm_memset32(buf_addr, 0xFF, len(self.buffer))
+                self._asm_memset32(buf_addr, 0xFF, buf_len)
 
                 # Handle partial bits in last byte row if needed
                 if remaining_bits != 0:
@@ -1100,19 +1101,19 @@ class FrameBufferHybridOptimized:
                     mask = uint((1 << remaining_bits) - 1)
                     width = int(self.width)
                     offset_base = uint((num_byte_rows - 1) * width)
-                    
+
                     for col in range(width):
                         buf[offset_base + col] = mask
             else:
                 # Fill with 0s
                 buf_addr = int(addressof(self.buffer))
-                self._asm_memset32(buf_addr, 0, len(self.buffer))
+                self._asm_memset32(buf_addr, 0, buf_len)
 
         elif format_val == 4:  # MONO_HLSB
             if c:
                 buf_addr = int(addressof(self.buffer))
-                self._asm_memset32(buf_addr, 0xFF, len(self.buffer))
-                
+                self._asm_memset32(buf_addr, 0xFF, buf_len)
+
                 # Handle last byte of each row if width not multiple of 8
                 remaining_bits = int(self.width) & 7
                 if remaining_bits != 0:
@@ -1120,23 +1121,22 @@ class FrameBufferHybridOptimized:
                     mask = uint((1 << remaining_bits) - 1)
                     bytes_per_row = int((int(self.width) + 7) >> 3)
                     height = int(self.height)
-                    
+
                     for row in range(height):
                         buf[row * bytes_per_row + bytes_per_row - 1] = mask
             else:
                 buf_addr = int(addressof(self.buffer))
-                self._asm_memset32(buf_addr, 0, len(self.buffer))
+                self._asm_memset32(buf_addr, 0, buf_len)
 
         elif format_val == 1:  # RGB565
             buf = ptr8(self.buffer)
-            buf_len = len(self.buffer)
             for i in range(0, buf_len, 2):
                 buf[i] = c & 0xFF
                 buf[i + 1] = (c >> 8) & 0xFF
 
         elif format_val == 5:  # GS8
             buf_addr = int(addressof(self.buffer))
-            self._asm_memset32(buf_addr, c & 0xFF, len(self.buffer))
+            self._asm_memset32(buf_addr, c & 0xFF, buf_len)
 
     @micropython.viper
     def fill_rect(self, x: int, y: int, w: int, h: int, c: int):
