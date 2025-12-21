@@ -548,12 +548,12 @@ class FrameBufferAsmThumb:
         label(LOOP)
         cmp(r3, 0)
         beq(END)
-        add(r0, r1)      # buffer[offset]
+        add(r0, r0, r1)  # buffer[offset] (r0 = r0 + r1)
         ldrb(r4, [r0, 0])
         mov(r5, r4)      # Save original
-        orr(r5, r2)      # r5 = r4 | r2 (set bit)
+        orr(r5, r2)      # r5 |= r2 (set bit)
         strb(r5, [r0, 0])
-        sub(r0, r1)      # Restore base
+        sub(r0, r0, r1)  # Restore base (r0 = r0 - r1)
         add(r1, 1)       # Next byte
         sub(r3, 1)       # Decrement counter
         b(LOOP)
