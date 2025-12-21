@@ -1,0 +1,52 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "linux": {
+        "command": "${workspaceFolder}/venv/bin/python"
+    },
+    "windows": {
+        "command": "${workspaceFolder}/venv/scripts/python"
+    },
+    "osx": {
+        "command": "${workspaceFolder}/venv/bin/python"
+    },
+    "type": "shell",
+    "problemMatcher": [],
+    "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "panel": "shared",
+        "showReuseMessage": true,
+        "clear": false
+    },
+    "tasks": [
+        {
+            "label": "🔽 Download",
+            "args": ["-m", "there", "-phwgrep://VID:PID=2E8A:0005", "--reset-on-connect", "--reset", "push", "-vv", "-r", "*.py", "/"]
+        },
+        {
+            "label": "🖥 Serial Terminal",
+            "args": ["-m", "serial", "hwgrep://VID:PID=2E8A:0005", "--exit-char=24", "--raw"],
+            "presentation": {
+                "focus": true,
+            }
+        },
+        // {
+        //     "label": "📂 Mount",
+        //     "args": ["-m", "there", "-p", "hwgrep://VID:PID=2E8A:0005", "mount", "mnt"],
+        //     "presentation": {
+        //         "focus": true,
+        //     }
+        // },
+        {
+            "label": "zzz create venv",
+            "command": "python3",
+            "args": ["-m", "venv", "venv"]
+        },
+        {
+            "label": "zzz venv install/upgrade requirements",
+            "args": ["-m", "pip", "install", "--upgrade", "-r", "requirements.txt"]
+        }
+    ]
+}

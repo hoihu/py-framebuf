@@ -1,0 +1,33 @@
+{
+    "python.pythonPath": "venv/bin/python",
+    "python.analysis.extraPaths": ["${workspaceFolder}/lib"],
+    "python.analysis.stubPath": "${workspaceFolder}/stubs",
+    "task.autoDetect": "off",
+    "cSpell.words": [
+        "addressof",
+        "aget",
+        "alloc",
+        "blit",
+        "cbus",
+        "deque",
+        "framebuf",
+        "gmtime",
+        "hline",
+        "HLSB",
+        "HMSB",
+        "not_osre",
+        "Pico",
+        "pyright",
+        "qsize",
+        "RASPI",
+        "uasyncio",
+        "uasyncqueue",
+        "ucollections",
+        "uctypes",
+        "VBUS",
+        "vline",
+        "VLSB",
+        "VREF",
+        "VSYS"
+    ]
+}
