@@ -4,6 +4,7 @@ Comparable to the built-in C framebuffer module, optimized with @micropython.nat
 """
 import micropython
 import framebuf
+from uctypes import addressof
 
 
 class FrameBufferPure:
@@ -580,13 +581,13 @@ class FrameBufferAsmThumb:
                             self.buffer[offset] = 0xFF
             else:
                 # Fill with 0s - use assembly helper for speed
-                buf_addr = int(micropython.addressof(self.buffer))
+                buf_addr = int(addressof(self.buffer))
                 self._asm_memset(buf_addr, 0, len(self.buffer))
 
         elif self.format == framebuf.MONO_HLSB:
             # Similar logic for MONO_HLSB
             if c:
-                buf_addr = int(micropython.addressof(self.buffer))
+                buf_addr = int(addressof(self.buffer))
                 self._asm_memset(buf_addr, 0xFF, len(self.buffer))
                 # Handle last byte of each row if width not multiple of 8
                 remaining_bits = self.width % 8
@@ -596,7 +597,7 @@ class FrameBufferAsmThumb:
                     for row in range(self.height):
                         self.buffer[row * bytes_per_row + bytes_per_row - 1] = mask
             else:
-                buf_addr = int(micropython.addressof(self.buffer))
+                buf_addr = int(addressof(self.buffer))
                 self._asm_memset(buf_addr, 0, len(self.buffer))
 
         elif self.format == framebuf.RGB565:
@@ -604,7 +605,7 @@ class FrameBufferAsmThumb:
                 self.buffer[i] = c & 0xFF
                 self.buffer[i + 1] = (c >> 8) & 0xFF
         elif self.format == framebuf.GS8:
-            buf_addr = int(micropython.addressof(self.buffer))
+            buf_addr = int(addressof(self.buffer))
             self._asm_memset(buf_addr, c & 0xFF, len(self.buffer))
 
     @micropython.native
@@ -632,7 +633,7 @@ class FrameBufferAsmThumb:
 
             if c:
                 # Use assembly for setting bits
-                buf_addr = int(micropython.addressof(self.buffer))
+                buf_addr = int(addressof(self.buffer))
                 self._asm_hline_mono_vlsb_set(buf_addr, offset, mask, w)
             else:
                 # Clear bits
