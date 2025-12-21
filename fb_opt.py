@@ -986,6 +986,22 @@ class FrameBufferHybridOptimized:
                 buf[offset + 1] = (c >> 8) & 0xFF
                 return 0
 
+        # MONO_HLSB format
+        elif int(self.format) == 4:  # framebuf.MONO_HLSB = 4
+            buf = ptr8(self.buffer)
+            bytes_per_row = uint((width + 7) >> 3)
+            offset = uint(y * bytes_per_row + (x >> 3))
+            bit_offset = uint(x & 7)
+
+            if c == -1:
+                return int((buf[offset] >> bit_offset) & 1)
+            else:
+                if c:
+                    buf[offset] |= (1 << bit_offset)
+                else:
+                    buf[offset] &= uint(~(1 << bit_offset) & 0xFF)
+                return 0
+
         # GS8 format
         elif int(self.format) == 5:  # framebuf.GS8 = 5
             buf = ptr8(self.buffer)
@@ -1000,7 +1016,7 @@ class FrameBufferHybridOptimized:
 
     @micropython.viper
     def hline(self, x: int, y: int, w: int, c: int):
-        """Draw horizontal line - @viper with inline bit manipulation"""
+        """Draw horizontal line - @viper with inline bit manipulation for all formats"""
         width = int(self.width)
         height = int(self.height)
 
@@ -1017,31 +1033,70 @@ class FrameBufferHybridOptimized:
         if w <= 0:
             return
 
+        format_val = int(self.format)
+        buf = ptr8(self.buffer)
+
         # MONO_VLSB format optimization
-        if int(self.format) == 0:  # framebuf.MONO_VLSB = 0
-            buf = ptr8(self.buffer)
+        if format_val == 0:  # framebuf.MONO_VLSB = 0
             byte_row = uint(y >> 3)
             bit_offset = uint(y & 7)
             mask = uint(1 << bit_offset)
             offset = uint(byte_row * width + x)
 
             if c:
-                # Set bits
                 for i in range(w):
                     buf[offset + i] |= mask
             else:
-                # Clear bits
                 inv_mask = uint(~mask & 0xFF)
                 for i in range(w):
                     buf[offset + i] &= inv_mask
+
+        # RGB565 format optimization
+        elif format_val == 1:  # framebuf.RGB565 = 1
+            offset = uint((y * width + x) * 2)
+            c_low = uint(c & 0xFF)
+            c_high = uint((c >> 8) & 0xFF)
+
+            for i in range(w):
+                buf[offset] = c_low
+                buf[offset + 1] = c_high
+                offset += 2
+
+        # MONO_HLSB format optimization
+        elif format_val == 4:  # framebuf.MONO_HLSB = 4
+            bytes_per_row = uint((width + 7) >> 3)
+            offset = uint(y * bytes_per_row + (x >> 3))
+            bit_start = uint(x & 7)
+
+            if c:
+                for i in range(w):
+                    bit_pos = uint((bit_start + i) & 7)
+                    if bit_pos == 0 and i > 0:
+                        offset += 1
+                    buf[offset] |= (1 << bit_pos)
+            else:
+                for i in range(w):
+                    bit_pos = uint((bit_start + i) & 7)
+                    if bit_pos == 0 and i > 0:
+                        offset += 1
+                    buf[offset] &= uint(~(1 << bit_pos) & 0xFF)
+
+        # GS8 format optimization
+        elif format_val == 5:  # framebuf.GS8 = 5
+            offset = uint(y * width + x)
+            c_byte = uint(c & 0xFF)
+
+            for i in range(w):
+                buf[offset + i] = c_byte
+
+        # Fallback for other formats
         else:
-            # Fallback for other formats
             for i in range(w):
                 self.pixel(x + i, y, c)
 
     @micropython.viper
     def vline(self, x: int, y: int, h: int, c: int):
-        """Draw vertical line - @viper with inline pixel writes"""
+        """Draw vertical line - @viper with inline pixel writes for all formats"""
         width = int(self.width)
         height = int(self.height)
 
@@ -1058,21 +1113,58 @@ class FrameBufferHybridOptimized:
         if h <= 0:
             return
 
-        # MONO_VLSB format optimization
-        if int(self.format) == 0:  # framebuf.MONO_VLSB = 0
-            buf = ptr8(self.buffer)
+        format_val = int(self.format)
+        buf = ptr8(self.buffer)
 
+        # MONO_VLSB format optimization
+        if format_val == 0:  # framebuf.MONO_VLSB = 0
             for i in range(h):
                 y_pos = y + i
                 byte_offset = uint((y_pos >> 3) * width + x)
                 bit_offset = uint(y_pos & 7)
+                mask = uint(1 << bit_offset)
 
                 if c:
-                    buf[byte_offset] |= (1 << bit_offset)
+                    buf[byte_offset] |= mask
                 else:
-                    buf[byte_offset] &= ~(1 << bit_offset)
+                    buf[byte_offset] &= uint(~mask & 0xFF)
+
+        # RGB565 format optimization
+        elif format_val == 1:  # framebuf.RGB565 = 1
+            c_low = uint(c & 0xFF)
+            c_high = uint((c >> 8) & 0xFF)
+
+            for i in range(h):
+                offset = uint(((y + i) * width + x) * 2)
+                buf[offset] = c_low
+                buf[offset + 1] = c_high
+
+        # MONO_HLSB format optimization
+        elif format_val == 4:  # framebuf.MONO_HLSB = 4
+            bytes_per_row = uint((width + 7) >> 3)
+            byte_offset = uint(x >> 3)
+            bit_pos = uint(x & 7)
+
+            if c:
+                for i in range(h):
+                    offset = uint((y + i) * bytes_per_row + byte_offset)
+                    buf[offset] |= (1 << bit_pos)
+            else:
+                mask = uint(~(1 << bit_pos) & 0xFF)
+                for i in range(h):
+                    offset = uint((y + i) * bytes_per_row + byte_offset)
+                    buf[offset] &= mask
+
+        # GS8 format optimization
+        elif format_val == 5:  # framebuf.GS8 = 5
+            c_byte = uint(c & 0xFF)
+
+            for i in range(h):
+                offset = uint((y + i) * width + x)
+                buf[offset] = c_byte
+
+        # Fallback for other formats
         else:
-            # Fallback for other formats
             for i in range(h):
                 self.pixel(x, y + i, c)
 
