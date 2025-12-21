@@ -70,17 +70,31 @@ class BenchmarkRunner:
 
     def verify_buffers_match(self, buf1, buf2, buf3, buf4, buf5, test_name):
         """Verify all five buffers have identical content"""
+        def show_diff(name1, name2, b1, b2):
+            print("  ⚠ MISMATCH: {} vs {} in {}".format(name1, name2, test_name))
+            print("    First 10 differences:")
+            count = 0
+            for i in range(min(len(b1), len(b2))):
+                if b1[i] != b2[i]:
+                    print("      byte[{}]: {}=0x{:02x} (0b{:08b})  {}=0x{:02x} (0b{:08b})".format(
+                        i, name1, b1[i], b1[i], name2, b2[i], b2[i]))
+                    count += 1
+                    if count >= 10:
+                        break
+            if count < 10:
+                print("    Total differences: {}".format(count))
+
         if buf1 != buf2:
-            print("  ⚠ MISMATCH: C vs Viper in {}".format(test_name))
+            show_diff("C", "Viper", buf1, buf2)
             return False
         if buf1 != buf3:
-            print("  ⚠ MISMATCH: C vs Native in {}".format(test_name))
+            show_diff("C", "Native", buf1, buf3)
             return False
         if buf1 != buf4:
-            print("  ⚠ MISMATCH: C vs AsmThumb in {}".format(test_name))
+            show_diff("C", "AsmThumb", buf1, buf4)
             return False
         if buf1 != buf5:
-            print("  ⚠ MISMATCH: C vs Hybrid in {}".format(test_name))
+            show_diff("C", "Hybrid", buf1, buf5)
             return False
         return True
 
