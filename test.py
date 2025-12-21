@@ -329,59 +329,87 @@ def run_standard_benchmarks():
 
 # Quick test functions
 def quick_test():
-    """Quick verification test to ensure implementations work"""
-    print("Running quick verification test...")
+    """Quick verification test to ensure implementations work across all color modes"""
+    print("Running quick verification test across all color modes...")
 
-    width, height = 20, 20
-    fmt = framebuf.MONO_VLSB
-    buffer_size = ((height + 7) // 8) * width
-
-    # Create framebuffers
-    buf_c = bytearray(buffer_size)
-    buf_viper = bytearray(buffer_size)
-    buf_native = bytearray(buffer_size)
-    buf_asm = bytearray(buffer_size)
-    buf_hybrid = bytearray(buffer_size)
-
-    fb_builtin = framebuf.FrameBuffer(buf_c, width, height, fmt)
-    fb_viper = FrameBufferPure(buf_viper, width, height, fmt)
-    fb_native = FrameBufferNative(buf_native, width, height, fmt)
-    fb_asm = FrameBufferAsmThumb(buf_asm, width, height, fmt)
-    fb_hybrid = FrameBufferHybridOptimized(buf_hybrid, width, height, fmt)
-
-    # Test operations
-    tests = [
-        ("fill", lambda fb: fb.fill(1)),
-        ("pixel", lambda fb: fb.pixel(5, 5, 0)),
-        ("hline", lambda fb: fb.hline(0, 10, width, 1)),
-        ("vline", lambda fb: fb.vline(10, 0, height, 1)),
-        ("rect", lambda fb: fb.rect(2, 2, 5, 5, 1)),
-        ("fill_rect", lambda fb: fb.fill_rect(12, 12, 5, 5, 0)),
-        ("line", lambda fb: fb.line(0, 0, width-1, height-1, 1)),
+    # Test configurations for different formats
+    test_configs = [
+        (framebuf.MONO_VLSB, "MONO_VLSB", 1),
+        (framebuf.RGB565, "RGB565", 0x07E0),      # Green in RGB565
+        (framebuf.MONO_HLSB, "MONO_HLSB", 1),
+        (framebuf.GS8, "GS8", 128),               # Mid-gray
     ]
 
-    all_pass = True
-    for test_name, op in tests:
-        # Clear buffers
-        for b in [buf_c, buf_viper, buf_native, buf_asm, buf_hybrid]:
-            for i in range(len(b)):
-                b[i] = 0
+    width, height = 20, 20
+    overall_pass = True
 
-        # Run operation
-        op(fb_builtin)
-        op(fb_viper)
-        op(fb_native)
-        op(fb_asm)
-        op(fb_hybrid)
+    for fmt, fmt_name, test_color in test_configs:
+        print("\n--- Testing {} ---".format(fmt_name))
 
-        # Verify
-        if buf_c == buf_viper == buf_native == buf_asm == buf_hybrid:
-            print("  ✓ {}".format(test_name))
+        # Calculate buffer size for this format
+        if fmt == framebuf.MONO_VLSB:
+            buffer_size = ((height + 7) // 8) * width
+        elif fmt == framebuf.MONO_HLSB:
+            buffer_size = height * ((width + 7) // 8)
+        elif fmt == framebuf.RGB565:
+            buffer_size = width * height * 2
+        elif fmt == framebuf.GS8:
+            buffer_size = width * height
         else:
-            print("  ✗ {} - buffers don't match!".format(test_name))
-            all_pass = False
+            buffer_size = width * height
 
-    return all_pass
+        # Create framebuffers
+        buf_c = bytearray(buffer_size)
+        buf_viper = bytearray(buffer_size)
+        buf_native = bytearray(buffer_size)
+        buf_asm = bytearray(buffer_size)
+        buf_hybrid = bytearray(buffer_size)
+
+        fb_builtin = framebuf.FrameBuffer(buf_c, width, height, fmt)
+        fb_viper = FrameBufferPure(buf_viper, width, height, fmt)
+        fb_native = FrameBufferNative(buf_native, width, height, fmt)
+        fb_asm = FrameBufferAsmThumb(buf_asm, width, height, fmt)
+        fb_hybrid = FrameBufferHybridOptimized(buf_hybrid, width, height, fmt)
+
+        # Test operations (using appropriate color for this format)
+        tests = [
+            ("fill", lambda fb: fb.fill(test_color)),
+            ("pixel", lambda fb: fb.pixel(5, 5, 0)),
+            ("hline", lambda fb: fb.hline(0, 10, width, test_color)),
+            ("vline", lambda fb: fb.vline(10, 0, height, test_color)),
+            ("rect", lambda fb: fb.rect(2, 2, 5, 5, test_color)),
+            ("fill_rect", lambda fb: fb.fill_rect(12, 12, 5, 5, 0)),
+            ("line", lambda fb: fb.line(0, 0, width-1, height-1, test_color)),
+        ]
+
+        format_pass = True
+        for test_name, op in tests:
+            # Clear buffers
+            for b in [buf_c, buf_viper, buf_native, buf_asm, buf_hybrid]:
+                for i in range(len(b)):
+                    b[i] = 0
+
+            # Run operation
+            op(fb_builtin)
+            op(fb_viper)
+            op(fb_native)
+            op(fb_asm)
+            op(fb_hybrid)
+
+            # Verify
+            if buf_c == buf_viper == buf_native == buf_asm == buf_hybrid:
+                print("  ✓ {}".format(test_name))
+            else:
+                print("  ✗ {} - buffers don't match!".format(test_name))
+                format_pass = False
+                overall_pass = False
+
+        if format_pass:
+            print("  → {} PASSED".format(fmt_name))
+        else:
+            print("  → {} FAILED".format(fmt_name))
+
+    return overall_pass
 
 
 if __name__ == "__main__":
