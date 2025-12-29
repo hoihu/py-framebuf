@@ -1,0 +1,363 @@
+"""
+Performance benchmark comparing C framebuf vs pure Python viper implementation
+
+Tests common operations on realistic display sizes:
+- MONO_VLSB 128x64 (SSD1306 OLED)
+- RGB565 64x64 (Color display)
+- GS8 128x128 (Grayscale display)
+- MONO_HLSB 128x64 (Horizontal layout)
+"""
+
+import time
+import framebuf
+import framebuf_pure
+
+# Global list to collect all benchmark results
+results = []
+
+# Helper function to measure execution time
+def benchmark(func, iterations=100):
+    """Run function multiple times and return average time in microseconds"""
+    start = time.ticks_us()
+    for _ in range(iterations):
+        func()
+    end = time.ticks_us()
+    elapsed = time.ticks_diff(end, start)
+    return elapsed / iterations
+
+
+def format_time(us):
+    """Format microseconds to readable string"""
+    if us < 1000:
+        return f"{us:.1f} µs"
+    elif us < 1000000:
+        return f"{us/1000:.1f} ms"
+    else:
+        return f"{us/1000000:.2f} s"
+
+
+def benchmark_mono_vlsb():
+    """Benchmark MONO_VLSB 128x64 (SSD1306 display)"""
+    print("\n" + "="*70)
+    print("MONO_VLSB 128x64 (SSD1306 OLED Display)")
+    print("="*70)
+
+    w, h = 128, 64
+    size = ((h + 7) // 8) * w  # 1024 bytes
+
+    # Create buffers
+    buf_c = bytearray(size)
+    buf_py = bytearray(size)
+
+    fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.MONO_VLSB)
+    fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.MONO_VLSB)
+
+    print(f"Buffer size: {size} bytes\n")
+
+    # Benchmark fill
+    print("Operation: fill(1)")
+    time_c = benchmark(lambda: fb_c.fill(1), 100)
+    time_py = benchmark(lambda: fb_py.fill(1), 100)
+    ratio = time_py / time_c
+    print(f"  C impl:     {format_time(time_c)}")
+    print(f"  Viper impl: {format_time(time_py)}")
+    print(f"  Ratio:      {ratio:.2f}x {'slower' if ratio > 1 else 'faster'}")
+    results.append(("MONO_VLSB", "fill(1)", time_c, time_py, ratio))
+
+    # Benchmark horizontal line
+    print("\nOperation: hline(0, 32, 128, 1)")
+    time_c = benchmark(lambda: fb_c.hline(0, 32, 128, 1), 1000)
+    time_py = benchmark(lambda: fb_py.hline(0, 32, 128, 1), 1000)
+    ratio = time_py / time_c
+    print(f"  C impl:     {format_time(time_c)}")
+    print(f"  Viper impl: {format_time(time_py)}")
+    print(f"  Ratio:      {ratio:.2f}x {'slower' if ratio > 1 else 'faster'}")
+    results.append(("MONO_VLSB", "hline", time_c, time_py, ratio))
+
+    # Benchmark vertical line
+    print("\nOperation: vline(64, 0, 64, 1)")
+    time_c = benchmark(lambda: fb_c.vline(64, 0, 64, 1), 1000)
+    time_py = benchmark(lambda: fb_py.vline(64, 0, 64, 1), 1000)
+    ratio = time_py / time_c
+    print(f"  C impl:     {format_time(time_c)}")
+    print(f"  Viper impl: {format_time(time_py)}")
+    print(f"  Ratio:      {ratio:.2f}x {'slower' if ratio > 1 else 'faster'}")
+    results.append(("MONO_VLSB", "vline", time_c, time_py, ratio))
+
+    # Benchmark pixel set (1000 random pixels)
+    print("\nOperation: 100x pixel(x, y, 1) - scattered pixels")
+    def set_pixels_c():
+        for i in range(100):
+            fb_c.pixel((i * 37) % 128, (i * 23) % 64, 1)
+
+    def set_pixels_py():
+        for i in range(100):
+            fb_py.pixel((i * 37) % 128, (i * 23) % 64, 1)
+
+    time_c = benchmark(set_pixels_c, 100)
+    time_py = benchmark(set_pixels_py, 100)
+    ratio = time_py / time_c
+    print(f"  C impl:     {format_time(time_c)}")
+    print(f"  Viper impl: {format_time(time_py)}")
+    print(f"  Ratio:      {ratio:.2f}x {'slower' if ratio > 1 else 'faster'}")
+    results.append(("MONO_VLSB", "pixel_set", time_c, time_py, ratio))
+
+    # Benchmark pixel read
+    print("\nOperation: 100x pixel(x, y) - read pixels")
+    def read_pixels_c():
+        total = 0
+        for i in range(100):
+            total += fb_c.pixel((i * 37) % 128, (i * 23) % 64)
+        return total
+
+    def read_pixels_py():
+        total = 0
+        for i in range(100):
+            total += fb_py.pixel((i * 37) % 128, (i * 23) % 64)
+        return total
+
+    time_c = benchmark(read_pixels_c, 100)
+    time_py = benchmark(read_pixels_py, 100)
+    ratio = time_py / time_c
+    print(f"  C impl:     {format_time(time_c)}")
+    print(f"  Viper impl: {format_time(time_py)}")
+    print(f"  Ratio:      {ratio:.2f}x {'slower' if ratio > 1 else 'faster'}")
+    results.append(("MONO_VLSB", "pixel_get", time_c, time_py, ratio))
+
+
+def benchmark_rgb565():
+    """Benchmark RGB565 64x64 (Color display)"""
+    print("\n" + "="*70)
+    print("RGB565 64x64 (Color Display)")
+    print("="*70)
+
+    w, h = 64, 64
+    size = w * h * 2  # 8,192 bytes
+
+    # Create buffers
+    buf_c = bytearray(size)
+    buf_py = bytearray(size)
+
+    fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.RGB565)
+    fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.RGB565)
+
+    print(f"Buffer size: {size} bytes\n")
+
+    # Benchmark fill
+    print("Operation: fill(0xF800) - red")
+    time_c = benchmark(lambda: fb_c.fill(0xF800), 100)
+    time_py = benchmark(lambda: fb_py.fill(0xF800), 100)
+    ratio = time_py / time_c
+    print(f"  C impl:     {format_time(time_c)}")
+    print(f"  Viper impl: {format_time(time_py)}")
+    print(f"  Ratio:      {ratio:.2f}x {'slower' if ratio > 1 else 'faster'}")
+    results.append(("RGB565", "fill", time_c, time_py, ratio))
+
+    # Benchmark horizontal line
+    print("\nOperation: hline(0, 32, 64, 0x07E0) - green line")
+    time_c = benchmark(lambda: fb_c.hline(0, 32, 64, 0x07E0), 500)
+    time_py = benchmark(lambda: fb_py.hline(0, 32, 64, 0x07E0), 500)
+    ratio = time_py / time_c
+    print(f"  C impl:     {format_time(time_c)}")
+    print(f"  Viper impl: {format_time(time_py)}")
+    print(f"  Ratio:      {ratio:.2f}x {'slower' if ratio > 1 else 'faster'}")
+    results.append(("RGB565", "hline", time_c, time_py, ratio))
+
+    # Benchmark vertical line
+    print("\nOperation: vline(32, 0, 64, 0x001F) - blue line")
+    time_c = benchmark(lambda: fb_c.vline(32, 0, 64, 0x001F), 500)
+    time_py = benchmark(lambda: fb_py.vline(32, 0, 64, 0x001F), 500)
+    ratio = time_py / time_c
+    print(f"  C impl:     {format_time(time_c)}")
+    print(f"  Viper impl: {format_time(time_py)}")
+    print(f"  Ratio:      {ratio:.2f}x {'slower' if ratio > 1 else 'faster'}")
+    results.append(("RGB565", "vline", time_c, time_py, ratio))
+
+    # Benchmark pixel operations
+    print("\nOperation: 100x pixel(x, y, color) - scattered pixels")
+    def set_pixels_c():
+        for i in range(100):
+            fb_c.pixel((i * 37) % 64, (i * 47) % 64, 0xFFFF)
+
+    def set_pixels_py():
+        for i in range(100):
+            fb_py.pixel((i * 37) % 64, (i * 47) % 64, 0xFFFF)
+
+    time_c = benchmark(set_pixels_c, 100)
+    time_py = benchmark(set_pixels_py, 100)
+    ratio = time_py / time_c
+    print(f"  C impl:     {format_time(time_c)}")
+    print(f"  Viper impl: {format_time(time_py)}")
+    print(f"  Ratio:      {ratio:.2f}x {'slower' if ratio > 1 else 'faster'}")
+    results.append(("RGB565", "pixel_set", time_c, time_py, ratio))
+
+
+def benchmark_gs8():
+    """Benchmark GS8 128x128 (Grayscale display)"""
+    print("\n" + "="*70)
+    print("GS8 128x128 (8-bit Grayscale Display)")
+    print("="*70)
+
+    w, h = 128, 128
+    size = w * h  # 16,384 bytes
+
+    # Create buffers
+    buf_c = bytearray(size)
+    buf_py = bytearray(size)
+
+    fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.GS8)
+    fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.GS8)
+
+    print(f"Buffer size: {size} bytes\n")
+
+    # Benchmark fill
+    print("Operation: fill(128)")
+    time_c = benchmark(lambda: fb_c.fill(128), 50)
+    time_py = benchmark(lambda: fb_py.fill(128), 50)
+    ratio = time_py / time_c
+    print(f"  C impl:     {format_time(time_c)}")
+    print(f"  Viper impl: {format_time(time_py)}")
+    print(f"  Ratio:      {ratio:.2f}x {'slower' if ratio > 1 else 'faster'}")
+    results.append(("GS8", "fill", time_c, time_py, ratio))
+
+    # Benchmark horizontal line
+    print("\nOperation: hline(0, 64, 128, 255)")
+    time_c = benchmark(lambda: fb_c.hline(0, 64, 128, 255), 500)
+    time_py = benchmark(lambda: fb_py.hline(0, 64, 128, 255), 500)
+    ratio = time_py / time_c
+    print(f"  C impl:     {format_time(time_c)}")
+    print(f"  Viper impl: {format_time(time_py)}")
+    print(f"  Ratio:      {ratio:.2f}x {'slower' if ratio > 1 else 'faster'}")
+    results.append(("GS8", "hline", time_c, time_py, ratio))
+
+    # Benchmark vertical line
+    print("\nOperation: vline(64, 0, 128, 200)")
+    time_c = benchmark(lambda: fb_c.vline(64, 0, 128, 200), 500)
+    time_py = benchmark(lambda: fb_py.vline(64, 0, 128, 200), 500)
+    ratio = time_py / time_c
+    print(f"  C impl:     {format_time(time_c)}")
+    print(f"  Viper impl: {format_time(time_py)}")
+    print(f"  Ratio:      {ratio:.2f}x {'slower' if ratio > 1 else 'faster'}")
+    results.append(("GS8", "vline", time_c, time_py, ratio))
+
+    # Benchmark pixel operations
+    print("\nOperation: 100x pixel(x, y, gray) - scattered pixels")
+    def set_pixels_c():
+        for i in range(100):
+            fb_c.pixel((i * 67) % 128, (i * 97) % 128, i % 256)
+
+    def set_pixels_py():
+        for i in range(100):
+            fb_py.pixel((i * 67) % 128, (i * 97) % 128, i % 256)
+
+    time_c = benchmark(set_pixels_c, 100)
+    time_py = benchmark(set_pixels_py, 100)
+    ratio = time_py / time_c
+    print(f"  C impl:     {format_time(time_c)}")
+    print(f"  Viper impl: {format_time(time_py)}")
+    print(f"  Ratio:      {ratio:.2f}x {'slower' if ratio > 1 else 'faster'}")
+    results.append(("GS8", "pixel_set", time_c, time_py, ratio))
+
+
+def benchmark_mono_hlsb():
+    """Benchmark MONO_HLSB 128x64"""
+    print("\n" + "="*70)
+    print("MONO_HLSB 128x64 (Horizontal layout)")
+    print("="*70)
+
+    w, h = 128, 64
+    size = ((w + 7) // 8) * h  # 1024 bytes
+
+    # Create buffers
+    buf_c = bytearray(size)
+    buf_py = bytearray(size)
+
+    fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.MONO_HLSB)
+    fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.MONO_HLSB)
+
+    print(f"Buffer size: {size} bytes\n")
+
+    # Benchmark fill
+    print("Operation: fill(1)")
+    time_c = benchmark(lambda: fb_c.fill(1), 100)
+    time_py = benchmark(lambda: fb_py.fill(1), 100)
+    ratio = time_py / time_c
+    print(f"  C impl:     {format_time(time_c)}")
+    print(f"  Viper impl: {format_time(time_py)}")
+    print(f"  Ratio:      {ratio:.2f}x {'slower' if ratio > 1 else 'faster'}")
+    results.append(("MONO_HLSB", "fill(1)", time_c, time_py, ratio))
+
+    # Benchmark horizontal line (byte-spanning case - most complex)
+    print("\nOperation: hline(5, 32, 118, 1) - byte spanning")
+    time_c = benchmark(lambda: fb_c.hline(5, 32, 118, 1), 1000)
+    time_py = benchmark(lambda: fb_py.hline(5, 32, 118, 1), 1000)
+    ratio = time_py / time_c
+    print(f"  C impl:     {format_time(time_c)}")
+    print(f"  Viper impl: {format_time(time_py)}")
+    print(f"  Ratio:      {ratio:.2f}x {'slower' if ratio > 1 else 'faster'}")
+    results.append(("MONO_HLSB", "hline", time_c, time_py, ratio))
+
+
+def print_summary_table():
+    """Print summary table of all benchmark results"""
+    print("\n" + "="*70)
+    print("PERFORMANCE SUMMARY TABLE")
+    print("="*70)
+    print(f"{'Format':<12} {'Operation':<12} {'C (µs)':<12} {'Viper (µs)':<12} {'Ratio':>8}")
+    print("-"*70)
+
+    for fmt, op, time_c, time_py, ratio in results:
+        c_str = f"{time_c:.1f}" if time_c < 1000 else f"{time_c/1000:.1f}ms"
+        py_str = f"{time_py:.1f}" if time_py < 1000 else f"{time_py/1000:.1f}ms"
+        ratio_str = f"{ratio:.2f}x"
+        print(f"{fmt:<12} {op:<12} {c_str:<12} {py_str:<12} {ratio_str:>8}")
+
+    print("="*70)
+    print("\nKey:")
+    print("  Ratio < 1.0 = Viper is FASTER than C")
+    print("  Ratio > 1.0 = Viper is SLOWER than C")
+    print("="*70)
+
+
+def run_all_benchmarks():
+    """Run all benchmark suites"""
+    global results
+    results = []  # Reset results list
+
+    print("\n" + "="*70)
+    print("MicroPython FrameBuf Performance Benchmark")
+    print("Comparing C implementation vs Pure Python Viper implementation")
+    print("="*70)
+
+    # Run benchmarks for each format
+    benchmark_mono_vlsb()
+
+    # RGB565 with memory-safe size
+    try:
+        benchmark_rgb565()
+    except MemoryError:
+        print("\n⚠ Skipping RGB565 64x64 - insufficient memory")
+
+    try:
+        benchmark_gs8()
+    except MemoryError:
+        print("\n⚠ Skipping GS8 128x128 - insufficient memory")
+
+    benchmark_mono_hlsb()
+
+    # Print summary table
+    print_summary_table()
+
+    print("\n" + "="*70)
+    print("Benchmark Complete")
+    print("="*70)
+    print("\nNotes:")
+    print("- Lower ratio is better (closer to C performance)")
+    print("- Viper optimizations significantly improve pure Python speed")
+    print("- Fill operations are memory-bandwidth limited")
+    print("- Line operations benefit from loop optimization")
+    print("="*70)
+
+
+if __name__ == "__main__":
+    run_all_benchmarks()
