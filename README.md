@@ -1,6 +1,6 @@
 # Pure Python MicroPython FrameBuffer Implementation
 
-A pure Python implementation of MicroPython's framebuffer module using `@micropython.viper` and `@micropython.asm_thumb` optimizations.
+A pure Python implementation of MicroPython's framebuffer module using `@micropython.viper` and `@micropython.asm_thumb` optimizations. This therefore runs on ARM compatible HW only.
 
 ## Overview
 
@@ -9,6 +9,26 @@ This implementation provides a drop-in replacement for the built-in C `framebuf`
 - All 7 color formats supported (MONO_VLSB, RGB565, GS4_HMSB, MONO_HLSB, MONO_HMSB, GS2_HMSB, GS8)
 - API-compatible with the C implementation
 - Optimized using viper decorators and ARM Thumb-2 assembly helpers
+
+## Motivation
+
+Some HW / Displays require other colorm format than the (hard coded) framebuf library from
+MicroPython.
+
+For example, a LED strip with WS2812 chips has 8 bits per color, making it a RGB888 format.
+
+Or it may be that a DMA channel which streams the framebuffer to the display requires a certain layout
+of the underlying buffer to work smoothly.
+
+All this would be difficult to do in C code and would also require to re-compile MicroPython.
+
+Using `@viper` and `@asm_thumb` enables to write pure-python code at reasonable speed. But how
+fast can it be?
+
+This repository tries to find an answer to this by benchmarking a viper / asm_thumb optimized
+pure-python framebuf vs the C code of the built-in micropython module
+
+Therefore - it's not meant as a replacement of the C-code of MicroPython, but rather as a test sceleton to benchmark things.
 
 ## Architecture
 
@@ -28,7 +48,7 @@ Each format has its own subclass (`FrameBufferMONO_VLSB`, `FrameBufferRGB565`, e
 
 Tested on MicroPython RP2040 Pico W Modul.
 
-Comparing C implementation vs pure Python viper implementation:
+Comparing C implementation vs pure Python viper implementation (lower ratio is better)
 
 ### Fill Operations
 
@@ -61,7 +81,7 @@ Comparing C implementation vs pure Python viper implementation:
 | RGB565    | 885.9  | 5000       | 5.59× |
 | GS8       | 972.0  | 5000       | 5.18× |
 
-**Individual pixel operations are 5-6× slower** than C. This is expected overhead for pure Python vs compiled C.
+**Individual pixel operations are 5-6× slower** than C.
 
 _Note: Benchmarks measure 10,000 pixel operations (100 pixels × 100 iterations)_
 
@@ -103,12 +123,12 @@ fb.fill_rect(40, 40, 10, 10, 1)  # Filled rectangle
 ## Limitations
 
 - Pixel and line operations are 2-6× slower than C
-- Memory usage may be higher
+- Flash usage may be higher, RAM usage should be roughly similar.
 - Some edge cases may behave differently than C implementation
-- Still needs more testing
+- Still needs more testing!
 
 ## Files
 
 - `framebuf_pure.py` - Main implementation (1,253 lines)
-- `test_framebuf.py` - Comprehensive test suite (31 tests)
+- `test_framebuf.py` - Test suite (31 tests)
 - `benchmark_framebuf.py` - Performance benchmarks
