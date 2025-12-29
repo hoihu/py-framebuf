@@ -156,33 +156,36 @@ it waits for the next connect.
     srv.bind(('', args.localport))
     srv.listen(1)
     logging.info("TCP/IP port: {}".format(args.localport))
-    while True:
-        try:
-            client_socket, addr = srv.accept()
-            logging.info('Connected by {}:{}'.format(addr[0], addr[1]))
-            client_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-            ser.rts = True
-            ser.dtr = True
-            # enter network <-> serial loop
-            r = Redirector(
-                ser,
-                client_socket,
-                args.verbosity > 0)
+    try:
+        while True:
             try:
-                r.shortcircuit()
-            finally:
-                logging.info('Disconnected')
-                r.stop()
-                client_socket.close()
-                ser.dtr = False
-                ser.rts = False
-                # Restore port settings (may have been changed by RFC 2217
-                # capable client)
-                ser.apply_settings(settings)
-        except KeyboardInterrupt:
-            sys.stdout.write('\n')
-            break
-        except socket.error as msg:
-            logging.error(str(msg))
-
-    logging.info('--- exit ---')
+                client_socket, addr = srv.accept()
+                logging.info('Connected by {}:{}'.format(addr[0], addr[1]))
+                client_socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                ser.rts = True
+                ser.dtr = True
+                # enter network <-> serial loop
+                r = Redirector(
+                    ser,
+                    client_socket,
+                    args.verbosity > 0)
+                try:
+                    r.shortcircuit()
+                finally:
+                    logging.info('Disconnected')
+                    r.stop()
+                    client_socket.close()
+                    ser.dtr = False
+                    ser.rts = False
+                    # Restore port settings (may have been changed by RFC 2217
+                    # capable client)
+                    ser.apply_settings(settings)
+            except KeyboardInterrupt:
+                sys.stdout.write('\n')
+                break
+            except socket.error as msg:
+                logging.error(str(msg))
+    finally:
+        logging.info('--- exit ---')
+        srv.close()
+        ser.close()
