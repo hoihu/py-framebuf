@@ -27,6 +27,7 @@ Usage:
 """
 
 import micropython
+from uctypes import addressof
 
 # Format constants (match C implementation)
 MONO_VLSB = 0
@@ -39,6 +40,118 @@ GS8 = 6
 
 # Aliases for compatibility
 MVLSB = MONO_VLSB
+
+
+# ====================================================================
+# ASM_THUMB OPTIMIZED HELPERS
+# Fast bulk memory fill operations using ARM Thumb-2 assembly
+# ====================================================================
+
+@micropython.asm_thumb
+def _asm_fill_byte(r0, r1, r2):
+    """
+    Fill memory with a byte value using assembly (optimized with word writes)
+    Args:
+        r0: buffer address
+        r1: number of bytes to fill
+        r2: byte value to fill
+    """
+    # Replicate byte across all 4 positions in a 32-bit word
+    # r3 = r2 | (r2 << 8) | (r2 << 16) | (r2 << 24)
+    mov(r3, r2)         # r3 = byte
+    lsl(r4, r2, 8)      # r4 = byte << 8
+    orr(r3, r4)         # r3 = byte | (byte << 8)
+    lsl(r4, r3, 16)     # r4 = (r3) << 16
+    orr(r3, r4)         # r3 now has byte replicated 4 times
+
+    # Calculate number of words (r1 / 4)
+    mov(r4, r1)         # r4 = total bytes
+    lsr(r4, r4, 2)      # r4 = total bytes / 4 (number of words)
+
+    # Word fill loop
+    label(WORD_LOOP)
+    cmp(r4, 0)
+    beq(BYTE_LOOP_SETUP)
+    str(r3, [r0, 0])    # Store word (4 bytes at once)
+    add(r0, r0, 4)      # r0 += 4
+    sub(r4, r4, 1)      # r4--
+    b(WORD_LOOP)
+
+    # Handle remaining bytes (0-3 bytes)
+    label(BYTE_LOOP_SETUP)
+    mov(r4, 3)          # r4 = 3
+    and_(r1, r4)        # r1 = original length & 3 (remainder)
+
+    # Byte fill loop for remainder
+    label(BYTE_LOOP)
+    cmp(r1, 0)
+    beq(END)
+    strb(r2, [r0, 0])   # Store byte
+    add(r0, r0, 1)      # r0++
+    sub(r1, r1, 1)      # r1--
+    b(BYTE_LOOP)
+
+    label(END)
+
+
+@micropython.asm_thumb
+def _asm_fill_word(r0, r1, r2):
+    """
+    Fill memory with a 32-bit word value using assembly (for 4-byte aligned fills)
+    Args:
+        r0: buffer address (must be 4-byte aligned)
+        r1: number of words to fill (total_bytes // 4)
+        r2: 32-bit word value to fill
+    """
+    label(LOOP)
+    str(r2, [r0, 0])   # Store word at r0
+    add(r0, r0, 4)      # r0 += 4
+    sub(r1, r1, 1)      # r1--
+    bne(LOOP)           # if r1 != 0 goto LOOP
+
+
+@micropython.asm_thumb
+def _asm_fill_rgb565(r0, r1, r2):
+    """
+    Fill RGB565 buffer with alternating low/high bytes (optimized with word writes)
+    Args:
+        r0: buffer address
+        r1: number of pixels to fill
+        r2: 16-bit RGB565 color value
+
+    Note: Uses r3, r4, r5 as scratch registers
+    """
+    # Create 32-bit word containing 2 pixels (color | (color << 16))
+    lsl(r3, r2, 16)     # r3 = color << 16
+    movw(r4, 0xFFFF)    # r4 = 0xFFFF (use movw for 16-bit immediate)
+    and_(r2, r4)        # r2 = color & 0xFFFF (lower 16 bits)
+    orr(r3, r2)         # r3 = (color << 16) | color (2 pixels in one word)
+
+    # Calculate number of word writes (pixels / 2)
+    mov(r4, r1)         # r4 = total pixels
+    lsr(r4, r4, 1)      # r4 = pixels / 2 (number of words)
+
+    # Word fill loop (write 2 pixels at once)
+    label(WORD_LOOP)
+    cmp(r4, 0)
+    beq(PIXEL_LOOP_SETUP)
+    str(r3, [r0, 0])    # Store word (2 pixels at once)
+    add(r0, r0, 4)      # r0 += 4
+    sub(r4, r4, 1)      # r4--
+    b(WORD_LOOP)
+
+    # Handle remaining pixel (if odd number of pixels)
+    label(PIXEL_LOOP_SETUP)
+    mov(r4, 1)          # r4 = 1
+    and_(r1, r4)        # r1 = original pixel count & 1 (remainder)
+
+    # Single pixel write for remainder
+    label(PIXEL_LOOP)
+    cmp(r1, 0)
+    beq(END)
+    strh(r2, [r0, 0])   # Store halfword (1 pixel = 2 bytes)
+
+    label(END)
 
 
 class FrameBuffer:
@@ -395,21 +508,14 @@ class FrameBuffer:
 
     @micropython.viper
     def _fill_rgb565(self, c: int):
-        """Fill for RGB565 format"""
-        buf = ptr8(self.buffer)
-        width = int(self.width)
+        """Fill for RGB565 format - optimized with asm_thumb"""
         height = int(self.height)
         stride = int(self.stride)
 
-        c_low = uint(c & 0xFF)
-        c_high = uint((c >> 8) & 0xFF)
-
-        # Fill entire buffer with 2-byte pattern
-        for y in range(height):
-            for x in range(width):
-                offset = uint((y * stride + x) * 2)
-                buf[offset] = c_low
-                buf[offset + 1] = c_high
+        # Use asm_thumb helper for fast fill
+        total_pixels = height * stride
+        buf_addr = int(addressof(self.buffer))
+        _asm_fill_rgb565(buf_addr, total_pixels, c)
 
     # ====================================================================
     # GS4_HMSB IMPLEMENTATIONS
@@ -528,9 +634,8 @@ class FrameBuffer:
 
     @micropython.viper
     def _fill_gs4_hmsb(self, c: int):
-        """Fill for GS4_HMSB format"""
+        """Fill for GS4_HMSB format - optimized flat loop"""
         buf = ptr8(self.buffer)
-        width = int(self.width)
         height = int(self.height)
         stride = int(self.stride)
 
@@ -538,12 +643,11 @@ class FrameBuffer:
         c_byte = uint((c_nibble << 4) | c_nibble)
 
         bytes_per_row = int((stride + 1) >> 1)
+        total_bytes = height * bytes_per_row
 
-        # Fill entire buffer with doubled nibble pattern
-        for y in range(height):
-            row_offset = uint(y * bytes_per_row)
-            for x in range(bytes_per_row):
-                buf[row_offset + x] = c_byte
+        # Fill entire buffer with doubled nibble pattern using flat loop
+        for i in range(total_bytes):
+            buf[i] = c_byte
 
     # ====================================================================
     # MONO_HLSB IMPLEMENTATIONS
@@ -694,20 +798,18 @@ class FrameBuffer:
 
     @micropython.viper
     def _fill_mono_hlsb(self, c: int):
-        """Fill for MONO_HLSB format"""
+        """Fill for MONO_HLSB format - optimized flat loop"""
         buf = ptr8(self.buffer)
-        width = int(self.width)
         height = int(self.height)
         stride = int(self.stride)
 
         bytes_per_row = int((stride + 7) >> 3)
         fill_byte = uint(0xFF if c else 0x00)
+        total_bytes = height * bytes_per_row
 
-        # Fill all bytes
-        for y in range(height):
-            row_offset = uint(y * bytes_per_row)
-            for x in range(bytes_per_row):
-                buf[row_offset + x] = fill_byte
+        # Fill all bytes using flat loop
+        for i in range(total_bytes):
+            buf[i] = fill_byte
 
         # Handle partial bits in last byte of each row if width not multiple of 8
         remaining_bits = stride & 7
@@ -868,20 +970,18 @@ class FrameBuffer:
 
     @micropython.viper
     def _fill_mono_hmsb(self, c: int):
-        """Fill for MONO_HMSB format"""
+        """Fill for MONO_HMSB format - optimized flat loop"""
         buf = ptr8(self.buffer)
-        width = int(self.width)
         height = int(self.height)
         stride = int(self.stride)
 
         bytes_per_row = int((stride + 7) >> 3)
         fill_byte = uint(0xFF if c else 0x00)
+        total_bytes = height * bytes_per_row
 
-        # Fill all bytes
-        for y in range(height):
-            row_offset = uint(y * bytes_per_row)
-            for x in range(bytes_per_row):
-                buf[row_offset + x] = fill_byte
+        # Fill all bytes using flat loop
+        for i in range(total_bytes):
+            buf[i] = fill_byte
 
         # Handle partial bits in last byte of each row if width not multiple of 8
         remaining_bits = stride & 7
@@ -995,9 +1095,8 @@ class FrameBuffer:
 
     @micropython.viper
     def _fill_gs2_hmsb(self, c: int):
-        """Fill for GS2_HMSB format"""
+        """Fill for GS2_HMSB format - optimized flat loop"""
         buf = ptr8(self.buffer)
-        width = int(self.width)
         height = int(self.height)
         stride = int(self.stride)
 
@@ -1006,12 +1105,11 @@ class FrameBuffer:
         c_byte = uint((c_bits << 6) | (c_bits << 4) | (c_bits << 2) | c_bits)
 
         bytes_per_row = int((stride + 3) >> 2)
+        total_bytes = height * bytes_per_row
 
-        # Fill entire buffer
-        for y in range(height):
-            row_offset = uint(y * bytes_per_row)
-            for x in range(bytes_per_row):
-                buf[row_offset + x] = c_byte
+        # Fill entire buffer using flat loop
+        for i in range(total_bytes):
+            buf[i] = c_byte
 
     # ====================================================================
     # GS8 IMPLEMENTATIONS
@@ -1101,16 +1199,12 @@ class FrameBuffer:
 
     @micropython.viper
     def _fill_gs8(self, c: int):
-        """Fill for GS8 format"""
-        buf = ptr8(self.buffer)
-        width = int(self.width)
+        """Fill for GS8 format - optimized with asm_thumb"""
         height = int(self.height)
         stride = int(self.stride)
 
-        c_byte = uint(c & 0xFF)
-
-        # Fill entire buffer
-        for y in range(height):
-            offset = uint(y * stride)
-            for x in range(width):
-                buf[offset + x] = c_byte
+        # Use asm_thumb helper for fast byte fill
+        total_bytes = height * stride
+        buf_addr = int(addressof(self.buffer))
+        c_byte = c & 0xFF
+        _asm_fill_byte(buf_addr, total_bytes, c_byte)
