@@ -10,7 +10,7 @@ This implementation provides a drop-in replacement for the built-in C `framebuf`
 - API-compatible with the C implementation
 - Optimized using viper decorators and ARM Thumb-2 assembly helpers
 
-## Motivation
+## Background and Motivation
 
 Some HW / Displays require other colorm format than the (hard coded) framebuf library from
 MicroPython.
@@ -30,6 +30,17 @@ pure-python framebuf vs the C code of the built-in micropython module
 
 Therefore - it's not meant as a replacement of the C-code of MicroPython, but rather as a test sceleton to benchmark things.
 
+## Claude / KI setup
+
+The code was written entirely using claude code with HW-in-the-loop.
+
+Using claude's `skills` I convinced claude to use my pico-W modul to download the python files, execute the tests and do all the other tasks in agent mode. This allowed claude to do a lot of the work autonomously (YOLO).
+
+I let claude run in a development setup recommended by anthropic, using a devcontainer with a
+firewall and let the pico module be exposed via a rfc2217 serial-to-TCP server (copied from the
+pyserial github repository). Claude can then talk to the board via port 2217.
+I've added some firewall rules to let that port go through.
+
 ## Architecture
 
 The implementation uses specialized subclasses for each format:
@@ -44,7 +55,7 @@ fb = framebuf.FrameBufferMONO_VLSB(buf, 128, 64)
 
 Each format has its own subclass (`FrameBufferMONO_VLSB`, `FrameBufferRGB565`, etc.) that directly overrides methods like `pixel()`, `hline()`, and `vline()` with `@micropython.viper` optimized implementations.
 
-## Performance Benchmarks
+## Performance
 
 Tested on MicroPython RP2040 Pico W Modul.
 
