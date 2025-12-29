@@ -303,6 +303,64 @@ def test_mono_vlsb_edge_cases():
     return True
 
 
+def test_mono_vlsb_realistic_size():
+    """Test MONO_VLSB with realistic 128x64 display size (SSD1306)"""
+    w, h = 128, 64
+    size = ((h + 7) // 8) * w  # 8 * 128 = 1024 bytes
+
+    if HAS_C_FRAMEBUF:
+        buf_c = bytearray(size)
+        fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.MONO_VLSB)
+
+    buf_py = bytearray(size)
+    fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.MONO_VLSB)
+
+    # Test fill
+    if HAS_C_FRAMEBUF:
+        fb_c.fill(1)
+    fb_py.fill(1)
+
+    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "128x64 fill"):
+        return False
+
+    # Test horizontal line across full width
+    if HAS_C_FRAMEBUF:
+        fb_c.fill(0)
+        fb_c.hline(0, 32, w, 1)
+    fb_py.fill(0)
+    fb_py.hline(0, 32, w, 1)
+
+    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "128x64 hline"):
+        return False
+
+    # Test vertical line down full height
+    if HAS_C_FRAMEBUF:
+        fb_c.fill(0)
+        fb_c.vline(64, 0, h, 1)
+    fb_py.fill(0)
+    fb_py.vline(64, 0, h, 1)
+
+    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "128x64 vline"):
+        return False
+
+    # Test some pixels
+    if HAS_C_FRAMEBUF:
+        fb_c.fill(0)
+        fb_c.pixel(0, 0, 1)
+        fb_c.pixel(127, 63, 1)
+        fb_c.pixel(64, 32, 1)
+    fb_py.fill(0)
+    fb_py.pixel(0, 0, 1)
+    fb_py.pixel(127, 63, 1)
+    fb_py.pixel(64, 32, 1)
+
+    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "128x64 pixels"):
+        return False
+
+    print("✓ MONO_VLSB 128x64 realistic size test passed")
+    return True
+
+
 # ========================================================================
 # RGB565 Tests
 # ========================================================================
@@ -1020,6 +1078,7 @@ def run_mono_vlsb_tests():
         test_mono_vlsb_vline,
         test_mono_vlsb_fill,
         test_mono_vlsb_edge_cases,
+        test_mono_vlsb_realistic_size,
     ]
 
     passed = 0
