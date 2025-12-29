@@ -176,6 +176,29 @@ class FrameBuffer:
         self.format = format
         self.stride = stride if stride is not None else width
 
+        # Cache function references to eliminate dispatch overhead
+        # This is the key optimization that C uses with function pointer tables
+        # Dictionary maps format to (pixel, fill_rect, hline, vline) implementations
+        draw_callbacks = {
+            MONO_VLSB: (self._pixel_mono_vlsb, self._fill_rect_mono_vlsb,
+                       self._hline_mono_vlsb, self._vline_mono_vlsb),
+            RGB565: (self._pixel_rgb565, self._fill_rect_rgb565,
+                    self._hline_rgb565, self._vline_rgb565),
+            GS4_HMSB: (self._pixel_gs4_hmsb, self._fill_rect_gs4_hmsb,
+                      self._hline_gs4_hmsb, self._vline_gs4_hmsb),
+            MONO_HLSB: (self._pixel_mono_hlsb, self._fill_rect_mono_hlsb,
+                       self._hline_mono_hlsb, self._vline_mono_hlsb),
+            MONO_HMSB: (self._pixel_mono_hmsb, self._fill_rect_mono_hmsb,
+                       self._hline_mono_hmsb, self._vline_mono_hmsb),
+            GS2_HMSB: (self._pixel_gs2_hmsb, self._fill_rect_gs2_hmsb,
+                      self._hline_gs2_hmsb, self._vline_gs2_hmsb),
+            GS8: (self._pixel_gs8, self._fill_rect_gs8,
+                 self._hline_gs8, self._vline_gs8),
+        }
+
+        # Unpack cached function references for this format
+        self._pixel_impl, self._fill_rect_impl, self._hline_impl, self._vline_impl = draw_callbacks[format]
+
     # ====================================================================
     # PUBLIC API
     # ====================================================================
@@ -183,6 +206,9 @@ class FrameBuffer:
     def pixel(self, x, y, c=-1):
         """
         Get or set pixel value at (x, y)
+
+        Optimized: Uses cached function reference to eliminate dispatch overhead.
+        This matches the C implementation's function pointer table approach.
 
         Args:
             x: X coordinate
@@ -193,25 +219,13 @@ class FrameBuffer:
         Returns:
             Current pixel value (if c not provided), or 0 (if c provided)
         """
-        if self.format == MONO_VLSB:
-            return self._pixel_mono_vlsb(x, y, c)
-        elif self.format == RGB565:
-            return self._pixel_rgb565(x, y, c)
-        elif self.format == GS4_HMSB:
-            return self._pixel_gs4_hmsb(x, y, c)
-        elif self.format == MONO_HLSB:
-            return self._pixel_mono_hlsb(x, y, c)
-        elif self.format == MONO_HMSB:
-            return self._pixel_mono_hmsb(x, y, c)
-        elif self.format == GS2_HMSB:
-            return self._pixel_gs2_hmsb(x, y, c)
-        elif self.format == GS8:
-            return self._pixel_gs8(x, y, c)
-        return 0
+        return self._pixel_impl(x, y, c)
 
     def hline(self, x, y, w, c):
         """
         Draw horizontal line starting at (x, y) with width w and color c
+
+        Optimized: Uses cached function reference to eliminate dispatch overhead.
 
         Args:
             x: Starting X coordinate
@@ -219,24 +233,13 @@ class FrameBuffer:
             w: Width in pixels
             c: Color value
         """
-        if self.format == MONO_VLSB:
-            self._hline_mono_vlsb(x, y, w, c)
-        elif self.format == RGB565:
-            self._hline_rgb565(x, y, w, c)
-        elif self.format == GS4_HMSB:
-            self._hline_gs4_hmsb(x, y, w, c)
-        elif self.format == MONO_HLSB:
-            self._hline_mono_hlsb(x, y, w, c)
-        elif self.format == MONO_HMSB:
-            self._hline_mono_hmsb(x, y, w, c)
-        elif self.format == GS2_HMSB:
-            self._hline_gs2_hmsb(x, y, w, c)
-        elif self.format == GS8:
-            self._hline_gs8(x, y, w, c)
+        self._hline_impl(x, y, w, c)
 
     def vline(self, x, y, h, c):
         """
         Draw vertical line starting at (x, y) with height h and color c
+
+        Optimized: Uses cached function reference to eliminate dispatch overhead.
 
         Args:
             x: X coordinate
@@ -244,20 +247,7 @@ class FrameBuffer:
             h: Height in pixels
             c: Color value
         """
-        if self.format == MONO_VLSB:
-            self._vline_mono_vlsb(x, y, h, c)
-        elif self.format == RGB565:
-            self._vline_rgb565(x, y, h, c)
-        elif self.format == GS4_HMSB:
-            self._vline_gs4_hmsb(x, y, h, c)
-        elif self.format == MONO_HLSB:
-            self._vline_mono_hlsb(x, y, h, c)
-        elif self.format == MONO_HMSB:
-            self._vline_mono_hmsb(x, y, h, c)
-        elif self.format == GS2_HMSB:
-            self._vline_gs2_hmsb(x, y, h, c)
-        elif self.format == GS8:
-            self._vline_gs8(x, y, h, c)
+        self._vline_impl(x, y, h, c)
 
     def fill(self, c):
         """
@@ -266,20 +256,56 @@ class FrameBuffer:
         Args:
             c: Color value
         """
-        if self.format == MONO_VLSB:
-            self._fill_mono_vlsb(c)
-        elif self.format == RGB565:
-            self._fill_rgb565(c)
-        elif self.format == GS4_HMSB:
-            self._fill_gs4_hmsb(c)
-        elif self.format == MONO_HLSB:
-            self._fill_mono_hlsb(c)
-        elif self.format == MONO_HMSB:
-            self._fill_mono_hmsb(c)
-        elif self.format == GS2_HMSB:
-            self._fill_gs2_hmsb(c)
-        elif self.format == GS8:
-            self._fill_gs8(c)
+        # Use fill_rect to fill entire buffer
+        self.fill_rect(0, 0, self.width, self.height, c)
+
+    def fill_rect(self, x, y, w, h, c):
+        """
+        Fill rectangle with color c
+
+        Args:
+            x: Starting X coordinate
+            y: Starting Y coordinate
+            w: Width in pixels
+            h: Height in pixels
+            c: Color value
+        """
+        # Bounds checking and clipping (matches C implementation)
+        if h < 1 or w < 1 or x + w <= 0 or y + h <= 0 or y >= self.height or x >= self.width:
+            return
+
+        # Clip to framebuffer bounds
+        xend = min(self.width, x + w)
+        yend = min(self.height, y + h)
+        x = max(x, 0)
+        y = max(y, 0)
+        w = xend - x
+        h = yend - y
+
+        # Call format-specific implementation
+        self._fill_rect_impl(x, y, w, h, c)
+
+    def rect(self, x, y, w, h, c, f=False):
+        """
+        Draw rectangle outline or filled rectangle
+
+        Args:
+            x: Starting X coordinate
+            y: Starting Y coordinate
+            w: Width in pixels
+            h: Height in pixels
+            c: Color value
+            f: Fill flag (optional). If True, draws filled rectangle. If False, draws outline.
+        """
+        if f:
+            # Filled rectangle
+            self.fill_rect(x, y, w, h, c)
+        else:
+            # Outline rectangle - draw 4 lines
+            self.fill_rect(x, y, w, 1, c)                  # Top edge
+            self.fill_rect(x, y + h - 1, w, 1, c)          # Bottom edge
+            self.fill_rect(x, y, 1, h, c)                  # Left edge
+            self.fill_rect(x + w - 1, y, 1, h, c)          # Right edge
 
     # ====================================================================
     # MONO_VLSB IMPLEMENTATIONS
@@ -291,26 +317,27 @@ class FrameBuffer:
 
     @micropython.viper
     def _pixel_mono_vlsb(self, x: int, y: int, c: int) -> int:
-        """Pixel implementation for MONO_VLSB format"""
+        """Pixel implementation for MONO_VLSB format - optimized"""
         width = int(self.width)
         height = int(self.height)
         stride = int(self.stride)
 
-        # Bounds check
-        if x < 0 or x >= width or y < 0 or y >= height:
+        # Bounds check - unsigned comparison handles negative values
+        if uint(x) >= uint(width) or uint(y) >= uint(height):
             return 0
 
         buf = ptr8(self.buffer)
         index = uint((y >> 3) * stride + x)
         offset = uint(y & 0x07)
+        mask = uint(1 << offset)
 
         if c == -1:  # Get pixel
             return int((buf[index] >> offset) & 1)
         else:  # Set pixel
             if c:
-                buf[index] |= uint(1 << offset)
+                buf[index] |= mask
             else:
-                buf[index] &= uint(~(1 << offset) & 0xFF)
+                buf[index] &= uint(~mask & 0xFF)
             return 0
 
     @micropython.viper
@@ -386,32 +413,34 @@ class FrameBuffer:
                 buf[byte_offset] &= uint(~mask & 0xFF)
 
     @micropython.viper
-    def _fill_mono_vlsb(self, c: int):
-        """Fill for MONO_VLSB format"""
-        buf = ptr8(self.buffer)
-        buf_len = int(len(self.buffer))
-        height = int(self.height)
+    def _fill_rect_mono_vlsb(self, x: int, y: int, w: int, h: int, c: int):
+        """Fill rectangle for MONO_VLSB format"""
         width = int(self.width)
+        height = int(self.height)
         stride = int(self.stride)
 
-        fill_byte = uint(0xFF if c else 0x00)
+        # Check if this is a full-buffer fill - use optimized path
+        if x == 0 and y == 0 and w == width and h == height:
+            buf = ptr8(self.buffer)
+            buf_len = int(len(self.buffer))
+            fill_byte = uint(0xFF if c else 0x00)
 
-        # Fill entire buffer
-        for i in range(buf_len):
-            buf[i] = fill_byte
+            # Fill entire buffer
+            for i in range(buf_len):
+                buf[i] = fill_byte
 
-        # Handle partial bits in last byte row if height not multiple of 8
-        remaining_bits = height & 7
-        if remaining_bits:
-            num_byte_rows = (height + 7) >> 3
-            if c:
-                # Mask off unused bits in last byte row
+            # Handle partial bits in last byte row if height not multiple of 8
+            remaining_bits = height & 7
+            if remaining_bits and c:
+                num_byte_rows = (height + 7) >> 3
                 mask = uint((1 << remaining_bits) - 1)
                 offset_base = uint((num_byte_rows - 1) * stride)
-
                 for col in range(width):
-                    buf[offset_base + col] = mask
-            # If c is 0, already filled with 0x00, so partial bits are correct
+                    buf[offset_base + col] &= mask
+        else:
+            # Partial rectangle - use hline for each row (matches C implementation)
+            for yy in range(h):
+                self._hline_mono_vlsb(x, y + yy, w, c)
 
     # ====================================================================
     # RGB565 IMPLEMENTATIONS
@@ -423,23 +452,23 @@ class FrameBuffer:
 
     @micropython.viper
     def _pixel_rgb565(self, x: int, y: int, c: int) -> int:
-        """Pixel implementation for RGB565 format"""
+        """Pixel implementation for RGB565 format - optimized with ptr16"""
         width = int(self.width)
         height = int(self.height)
         stride = int(self.stride)
 
-        # Bounds check
-        if x < 0 or x >= width or y < 0 or y >= height:
+        # Bounds check - unsigned comparison handles negative values
+        if uint(x) >= uint(width) or uint(y) >= uint(height):
             return 0
 
-        buf = ptr8(self.buffer)
-        index = uint((y * stride + x) * 2)
+        # Use ptr16 for direct 16-bit access (more efficient than byte manipulation)
+        buf = ptr16(self.buffer)
+        index = uint(y * stride + x)
 
         if c == -1:  # Get pixel
-            return int(buf[index] | (buf[index + 1] << 8))
+            return int(buf[index])
         else:  # Set pixel
-            buf[index] = uint(c & 0xFF)
-            buf[index + 1] = uint((c >> 8) & 0xFF)
+            buf[index] = uint(c & 0xFFFF)
             return 0
 
     @micropython.viper
@@ -507,15 +536,25 @@ class FrameBuffer:
             buf[offset + 1] = c_high
 
     @micropython.viper
-    def _fill_rgb565(self, c: int):
-        """Fill for RGB565 format - optimized with asm_thumb"""
+    def _fill_rect_rgb565(self, x: int, y: int, w: int, h: int, c: int):
+        """Fill rectangle for RGB565 format - optimized with asm_thumb"""
+        width = int(self.width)
         height = int(self.height)
         stride = int(self.stride)
 
-        # Use asm_thumb helper for fast fill
-        total_pixels = height * stride
-        buf_addr = int(addressof(self.buffer))
-        _asm_fill_rgb565(buf_addr, total_pixels, c)
+        # Check if this is a full-buffer fill - use optimized asm path
+        if x == 0 and y == 0 and w == width and h == height:
+            total_pixels = height * stride
+            buf_addr = int(addressof(self.buffer))
+            _asm_fill_rgb565(buf_addr, total_pixels, c)
+        else:
+            # Partial fill - use row-by-row approach like C
+            buf = ptr16(self.buffer)
+            c_val = uint(c & 0xFFFF)
+            for yy in range(h):
+                offset = uint((y + yy) * stride + x)
+                for xx in range(w):
+                    buf[offset + xx] = c_val
 
     # ====================================================================
     # GS4_HMSB IMPLEMENTATIONS
@@ -633,21 +672,23 @@ class FrameBuffer:
                 buf[row_offset + idx] = uint((buf[row_offset + idx] & 0x0F) | (c_nibble << 4))
 
     @micropython.viper
-    def _fill_gs4_hmsb(self, c: int):
-        """Fill for GS4_HMSB format - optimized flat loop"""
-        buf = ptr8(self.buffer)
-        height = int(self.height)
-        stride = int(self.stride)
-
-        c_nibble = uint(c & 0x0F)
-        c_byte = uint((c_nibble << 4) | c_nibble)
-
-        bytes_per_row = int((stride + 1) >> 1)
-        total_bytes = height * bytes_per_row
-
-        # Fill entire buffer with doubled nibble pattern using flat loop
-        for i in range(total_bytes):
-            buf[i] = c_byte
+    def _fill_rect_gs4_hmsb(self, x: int, y: int, w: int, h: int, c: int):
+        """Fill rectangle for GS4_HMSB format"""
+        # Check if full-buffer fill for optimization
+        if x == 0 and y == 0 and w == int(self.width) and h == int(self.height):
+            buf = ptr8(self.buffer)
+            height = int(self.height)
+            stride = int(self.stride)
+            c_nibble = uint(c & 0x0F)
+            c_byte = uint((c_nibble << 4) | c_nibble)
+            bytes_per_row = int((stride + 1) >> 1)
+            total_bytes = height * bytes_per_row
+            for i in range(total_bytes):
+                buf[i] = c_byte
+        else:
+            # Partial rectangle - use hline for each row
+            for yy in range(h):
+                self._hline_gs4_hmsb(x, y + yy, w, c)
 
     # ====================================================================
     # MONO_HLSB IMPLEMENTATIONS
@@ -797,31 +838,41 @@ class FrameBuffer:
                 buf[row_offset + byte_in_row] &= inv_mask
 
     @micropython.viper
-    def _fill_mono_hlsb(self, c: int):
-        """Fill for MONO_HLSB format - optimized flat loop"""
-        buf = ptr8(self.buffer)
-        height = int(self.height)
-        stride = int(self.stride)
+    def _fill_rect_mono_hlsb(self, x: int, y: int, w: int, h: int, c: int):
+        """Fill rectangle for MONO_HLSB format - optimized with viper"""
+        # Check if full-buffer fill for optimization
+        if x == 0 and y == 0 and w == int(self.width) and h == int(self.height):
+            buf = ptr8(self.buffer)
+            height = int(self.height)
+            stride = int(self.stride)
+            bytes_per_row = int((stride + 7) >> 3)
+            fill_byte = uint(0xFF if c else 0x00)
 
-        bytes_per_row = int((stride + 7) >> 3)
-        fill_byte = uint(0xFF if c else 0x00)
-        total_bytes = height * bytes_per_row
+            # Calculate partial pixels in last byte of each row
+            partial_pixels = int(stride & 0x07)
 
-        # Fill all bytes using flat loop
-        for i in range(total_bytes):
-            buf[i] = fill_byte
+            if partial_pixels > 0:
+                # Each row has a partial last byte
+                # For HLSB: bits 7...(8-partial_pixels) are used
+                mask = uint((0xFF << (8 - partial_pixels)) & 0xFF)
+                last_byte_fill = uint(fill_byte & mask)
 
-        # Handle partial bits in last byte of each row if width not multiple of 8
-        remaining_bits = stride & 7
-        if remaining_bits and c:
-            # Mask off unused bits in last byte of each row
-            last_byte_idx = bytes_per_row - 1
-            # For HLSB, used bits are in upper part of byte
-            mask = uint((0xFF << (8 - remaining_bits)) & 0xFF)
-
-            for y in range(height):
-                row_offset = uint(y * bytes_per_row)
-                buf[row_offset + last_byte_idx] = mask
+                for row in range(height):
+                    offset = uint(row * bytes_per_row)
+                    # Fill all full bytes in this row
+                    for i in range(bytes_per_row - 1):
+                        buf[offset + i] = fill_byte
+                    # Fill partial last byte with mask
+                    buf[offset + bytes_per_row - 1] = last_byte_fill
+            else:
+                # All bytes are complete, fast fill
+                total_bytes = height * bytes_per_row
+                for i in range(total_bytes):
+                    buf[i] = fill_byte
+        else:
+            # Partial rectangle - use hline for each row
+            for yy in range(h):
+                self._hline_mono_hlsb(x, y + yy, w, c)
 
     # ====================================================================
     # MONO_HMSB IMPLEMENTATIONS
@@ -969,31 +1020,41 @@ class FrameBuffer:
                 buf[row_offset + byte_in_row] &= inv_mask
 
     @micropython.viper
-    def _fill_mono_hmsb(self, c: int):
-        """Fill for MONO_HMSB format - optimized flat loop"""
-        buf = ptr8(self.buffer)
-        height = int(self.height)
-        stride = int(self.stride)
+    def _fill_rect_mono_hmsb(self, x: int, y: int, w: int, h: int, c: int):
+        """Fill rectangle for MONO_HMSB format - optimized with viper"""
+        # Check if full-buffer fill for optimization
+        if x == 0 and y == 0 and w == int(self.width) and h == int(self.height):
+            buf = ptr8(self.buffer)
+            height = int(self.height)
+            stride = int(self.stride)
+            bytes_per_row = int((stride + 7) >> 3)
+            fill_byte = uint(0xFF if c else 0x00)
 
-        bytes_per_row = int((stride + 7) >> 3)
-        fill_byte = uint(0xFF if c else 0x00)
-        total_bytes = height * bytes_per_row
+            # Calculate partial pixels in last byte of each row
+            partial_pixels = int(stride & 0x07)
 
-        # Fill all bytes using flat loop
-        for i in range(total_bytes):
-            buf[i] = fill_byte
+            if partial_pixels > 0:
+                # Each row has a partial last byte
+                # For HMSB: bits 0...(partial_pixels-1) are used
+                mask = uint((1 << partial_pixels) - 1)
+                last_byte_fill = uint(fill_byte & mask)
 
-        # Handle partial bits in last byte of each row if width not multiple of 8
-        remaining_bits = stride & 7
-        if remaining_bits and c:
-            # Mask off unused bits in last byte of each row
-            last_byte_idx = bytes_per_row - 1
-            # For HMSB, used bits are in lower part of byte (bits 0 to remaining_bits-1)
-            mask = uint((1 << remaining_bits) - 1)
-
-            for y in range(height):
-                row_offset = uint(y * bytes_per_row)
-                buf[row_offset + last_byte_idx] = mask
+                for row in range(height):
+                    offset = uint(row * bytes_per_row)
+                    # Fill all full bytes in this row
+                    for i in range(bytes_per_row - 1):
+                        buf[offset + i] = fill_byte
+                    # Fill partial last byte with mask
+                    buf[offset + bytes_per_row - 1] = last_byte_fill
+            else:
+                # All bytes are complete, fast fill
+                total_bytes = height * bytes_per_row
+                for i in range(total_bytes):
+                    buf[i] = fill_byte
+        else:
+            # Partial rectangle - use hline for each row
+            for yy in range(h):
+                self._hline_mono_hmsb(x, y + yy, w, c)
 
     # ====================================================================
     # GS2_HMSB IMPLEMENTATIONS
@@ -1094,22 +1155,23 @@ class FrameBuffer:
             buf[row_offset + byte_in_row] = uint((buf[row_offset + byte_in_row] & ~mask) | color)
 
     @micropython.viper
-    def _fill_gs2_hmsb(self, c: int):
-        """Fill for GS2_HMSB format - optimized flat loop"""
-        buf = ptr8(self.buffer)
-        height = int(self.height)
-        stride = int(self.stride)
-
-        c_bits = uint(c & 0x3)
-        # Replicate 2-bit value across all 4 positions in byte
-        c_byte = uint((c_bits << 6) | (c_bits << 4) | (c_bits << 2) | c_bits)
-
-        bytes_per_row = int((stride + 3) >> 2)
-        total_bytes = height * bytes_per_row
-
-        # Fill entire buffer using flat loop
-        for i in range(total_bytes):
-            buf[i] = c_byte
+    def _fill_rect_gs2_hmsb(self, x: int, y: int, w: int, h: int, c: int):
+        """Fill rectangle for GS2_HMSB format"""
+        # Check if full-buffer fill for optimization
+        if x == 0 and y == 0 and w == int(self.width) and h == int(self.height):
+            buf = ptr8(self.buffer)
+            height = int(self.height)
+            stride = int(self.stride)
+            c_bits = uint(c & 0x3)
+            c_byte = uint((c_bits << 6) | (c_bits << 4) | (c_bits << 2) | c_bits)
+            bytes_per_row = int((stride + 3) >> 2)
+            total_bytes = height * bytes_per_row
+            for i in range(total_bytes):
+                buf[i] = c_byte
+        else:
+            # Partial rectangle - use hline for each row
+            for yy in range(h):
+                self._hline_gs2_hmsb(x, y + yy, w, c)
 
     # ====================================================================
     # GS8 IMPLEMENTATIONS
@@ -1121,13 +1183,13 @@ class FrameBuffer:
 
     @micropython.viper
     def _pixel_gs8(self, x: int, y: int, c: int) -> int:
-        """Pixel implementation for GS8 format"""
+        """Pixel implementation for GS8 format - optimized"""
         width = int(self.width)
         height = int(self.height)
         stride = int(self.stride)
 
-        # Bounds check
-        if x < 0 or x >= width or y < 0 or y >= height:
+        # Bounds check - unsigned comparison handles negative values
+        if uint(x) >= uint(width) or uint(y) >= uint(height):
             return 0
 
         buf = ptr8(self.buffer)
@@ -1198,13 +1260,21 @@ class FrameBuffer:
             buf[offset] = c_byte
 
     @micropython.viper
-    def _fill_gs8(self, c: int):
-        """Fill for GS8 format - optimized with asm_thumb"""
+    def _fill_rect_gs8(self, x: int, y: int, w: int, h: int, c: int):
+        """Fill rectangle for GS8 format - optimized with asm_thumb"""
         height = int(self.height)
         stride = int(self.stride)
+        c_byte = int(c & 0xFF)
 
-        # Use asm_thumb helper for fast byte fill
-        total_bytes = height * stride
-        buf_addr = int(addressof(self.buffer))
-        c_byte = c & 0xFF
-        _asm_fill_byte(buf_addr, total_bytes, c_byte)
+        # Check if this is a full-buffer fill - use optimized asm path
+        if x == 0 and y == 0 and w == int(self.width) and h == height:
+            total_bytes = height * stride
+            buf_addr = int(addressof(self.buffer))
+            _asm_fill_byte(buf_addr, total_bytes, c_byte)
+        else:
+            # Partial fill - use memset per row like C implementation
+            for yy in range(h):
+                offset = uint((y + yy) * stride + x)
+                # Fill this row using asm helper for speed
+                buf_addr = int(addressof(self.buffer)) + offset
+                _asm_fill_byte(buf_addr, w, c_byte)

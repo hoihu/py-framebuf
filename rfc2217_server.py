@@ -135,7 +135,7 @@ it waits for the next connect.
 
     # connect to serial port
     ser = serial.serial_for_url(args.SERIALPORT, do_not_open=True)
-    ser.timeout = 3     # required so that the reader thread can exit
+    ser.timeout = 2     # required so that the reader thread can exit
     # reset control line as no _remote_ "terminal" has been connected yet
     ser.dtr = False
     ser.rts = False
@@ -150,13 +150,11 @@ it waits for the next connect.
 
     logging.info("Serving serial port: {}".format(ser.name))
     settings = ser.get_settings()
-
-    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    srv.bind(('', args.localport))
-    srv.listen(1)
-    logging.info("TCP/IP port: {}".format(args.localport))
-    try:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as srv:
+        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        srv.bind(('', args.localport))
+        srv.listen(1)
+        logging.info("TCP/IP port: {}".format(args.localport))
         while True:
             try:
                 client_socket, addr = srv.accept()
@@ -185,7 +183,5 @@ it waits for the next connect.
                 break
             except socket.error as msg:
                 logging.error(str(msg))
-    finally:
         logging.info('--- exit ---')
-        srv.close()
-        ser.close()
+        
