@@ -1,1 +1,8 @@
 .DS_*
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+/venv/*
+/venvdev/*
+micropython/
