@@ -1313,6 +1313,361 @@ def run_gs2_hmsb_tests():
     return failed == 0
 
 
+# ========================================================================
+# Blit Tests
+# ========================================================================
+
+def test_blit_gs8_basic():
+    """Test basic GS8 blit operations"""
+    w, h = 5, 4
+    buf_py = bytearray(w * h)
+    fbuf_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.GS8)
+
+    # Create a 2x2 source filled with 0xFF
+    fbuf2_py = framebuf_pure.FrameBuffer(bytearray(4), 2, 2, framebuf_pure.GS8)
+    fbuf2_py.fill(0xFF)
+
+    if HAS_C_FRAMEBUF:
+        buf_c = bytearray(w * h)
+        fbuf_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.GS8)
+        fbuf2_c = framebuf.FrameBuffer(bytearray(4), 2, 2, framebuf.GS8)
+        fbuf2_c.fill(0xFF)
+
+    # Test blit at various positions
+    test_positions = [(-1, -1), (0, 0), (1, 1), (4, 3)]
+
+    for x, y in test_positions:
+        fbuf_py.fill(0)
+        fbuf_py.blit(fbuf2_py, x, y)
+
+        if HAS_C_FRAMEBUF:
+            fbuf_c.fill(0)
+            fbuf_c.blit(fbuf2_c, x, y)
+            if not compare_buffers(buf_c, buf_py, f"blit GS8 at ({x}, {y})"):
+                return False
+
+    return True
+
+
+def test_blit_tuple_source():
+    """Test blit from tuple source"""
+    w, h = 5, 4
+    buf_py = bytearray(w * h)
+    fbuf_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.GS8)
+
+    if HAS_C_FRAMEBUF:
+        buf_c = bytearray(w * h)
+        fbuf_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.GS8)
+
+    # Blit a bytes object
+    fbuf_py.fill(0)
+    image = (b"\x10\x11\x12\x13", 2, 2, framebuf_pure.GS8)
+    fbuf_py.blit(image, 1, 1)
+
+    if HAS_C_FRAMEBUF:
+        fbuf_c.fill(0)
+        image_c = (b"\x10\x11\x12\x13", 2, 2, framebuf.GS8)
+        fbuf_c.blit(image_c, 1, 1)
+        if not compare_buffers(buf_c, buf_py, "blit from tuple"):
+            return False
+
+    return True
+
+
+def test_blit_tuple_with_stride():
+    """Test blit from tuple with stride"""
+    w, h = 5, 4
+    buf_py = bytearray(w * h)
+    fbuf_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.GS8)
+
+    if HAS_C_FRAMEBUF:
+        buf_c = bytearray(w * h)
+        fbuf_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.GS8)
+
+    # Blit a bytes object with stride (2x2 image with stride=3)
+    fbuf_py.fill(0)
+    image = (b"\x20\x21\xff\x22\x23\xff", 2, 2, framebuf_pure.GS8, 3)
+    fbuf_py.blit(image, 1, 1)
+
+    if HAS_C_FRAMEBUF:
+        fbuf_c.fill(0)
+        image_c = (b"\x20\x21\xff\x22\x23\xff", 2, 2, framebuf.GS8, 3)
+        fbuf_c.blit(image_c, 1, 1)
+        if not compare_buffers(buf_c, buf_py, "blit with stride"):
+            return False
+
+    return True
+
+
+def test_blit_with_palette():
+    """Test blit with palette color translation"""
+    w, h = 5, 4
+    buf_py = bytearray(w * h)
+    fbuf_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.GS8)
+
+    if HAS_C_FRAMEBUF:
+        buf_c = bytearray(w * h)
+        fbuf_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.GS8)
+
+    # Blit with palette
+    fbuf_py.fill(0)
+    image = (b"\x00\x01\x01\x00", 2, 2, framebuf_pure.GS8)
+    palette = (b"\xa1\xa2", 2, 1, framebuf_pure.GS8)
+    fbuf_py.blit(image, 1, 1, -1, palette)
+
+    if HAS_C_FRAMEBUF:
+        fbuf_c.fill(0)
+        image_c = (b"\x00\x01\x01\x00", 2, 2, framebuf.GS8)
+        palette_c = (b"\xa1\xa2", 2, 1, framebuf.GS8)
+        fbuf_c.blit(image_c, 1, 1, -1, palette_c)
+        if not compare_buffers(buf_c, buf_py, "blit with palette"):
+            return False
+
+    return True
+
+
+def test_blit_cross_format_palette():
+    """Test blit between MONO_HLSB and RGB565 with palette"""
+    # Create MONO_HLSB source (8x8)
+    w, h = 8, 8
+    src_buf_py = bytearray(w * h // 8)
+    src_py = framebuf_pure.FrameBuffer(src_buf_py, w, h, framebuf_pure.MONO_HLSB)
+    src_py.pixel(0, 0, 1)
+    src_py.pixel(7, 7, 1)
+    src_py.pixel(3, 3, 1)
+
+    # Create RGB565 destination (16x16)
+    wd, hd = 16, 16
+    dest_buf_py = bytearray(wd * hd * 2)
+    dest_py = framebuf_pure.FrameBuffer(dest_buf_py, wd, hd, framebuf_pure.RGB565)
+
+    # Create RGB565 palette (2 colors for monochrome)
+    bg = 0x1234
+    fg = 0xF800
+    pal_buf_py = bytearray(2 * 2)  # 2 pixels * 2 bytes
+    palette_py = framebuf_pure.FrameBuffer(pal_buf_py, 2, 1, framebuf_pure.RGB565)
+    palette_py.pixel(0, 0, bg)
+    palette_py.pixel(1, 0, fg)
+
+    # Blit with palette
+    dest_py.blit(src_py, 0, 0, -1, palette_py)
+
+    # Verify pixels
+    if dest_py.pixel(0, 0, -1) != fg:
+        print(f"❌ Expected pixel(0,0)={fg:04x}, got {dest_py.pixel(0, 0, -1):04x}")
+        return False
+    if dest_py.pixel(7, 7, -1) != fg:
+        print(f"❌ Expected pixel(7,7)={fg:04x}, got {dest_py.pixel(7, 7, -1):04x}")
+        return False
+    if dest_py.pixel(3, 3, -1) != fg:
+        print(f"❌ Expected pixel(3,3)={fg:04x}, got {dest_py.pixel(3, 3, -1):04x}")
+        return False
+    if dest_py.pixel(0, 1, -1) != bg:
+        print(f"❌ Expected pixel(0,1)={bg:04x}, got {dest_py.pixel(0, 1, -1):04x}")
+        return False
+    if dest_py.pixel(8, 8, -1) != 0:
+        print(f"❌ Expected pixel(8,8)=0000, got {dest_py.pixel(8, 8, -1):04x}")
+        return False
+
+    if HAS_C_FRAMEBUF:
+        # Compare with C implementation
+        src_buf_c = bytearray(w * h // 8)
+        src_c = framebuf.FrameBuffer(src_buf_c, w, h, framebuf.MONO_HLSB)
+        src_c.pixel(0, 0, 1)
+        src_c.pixel(7, 7, 1)
+        src_c.pixel(3, 3, 1)
+
+        dest_buf_c = bytearray(wd * hd * 2)
+        dest_c = framebuf.FrameBuffer(dest_buf_c, wd, hd, framebuf.RGB565)
+
+        pal_buf_c = bytearray(2 * 2)
+        palette_c = framebuf.FrameBuffer(pal_buf_c, 2, 1, framebuf.RGB565)
+        palette_c.pixel(0, 0, bg)
+        palette_c.pixel(1, 0, fg)
+
+        dest_c.blit(src_c, 0, 0, -1, palette_c)
+
+        if not compare_buffers(dest_buf_c, dest_buf_py, "cross-format blit with palette"):
+            return False
+
+    return True
+
+
+def test_blit_transparency():
+    """Test blit with transparency key"""
+    w, h = 8, 8
+    buf_py = bytearray(w * h)
+    fbuf_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.GS8)
+    fbuf_py.fill(0x55)
+
+    # Create source with alternating pattern
+    src_buf = bytearray([0xFF if (i + j) % 2 == 0 else 0x00 for j in range(4) for i in range(4)])
+    src_py = framebuf_pure.FrameBuffer(src_buf, 4, 4, framebuf_pure.GS8)
+
+    # Blit with transparency (skip 0x00 pixels)
+    fbuf_py.blit(src_py, 2, 2, 0x00)
+
+    if HAS_C_FRAMEBUF:
+        buf_c = bytearray(w * h)
+        fbuf_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.GS8)
+        fbuf_c.fill(0x55)
+
+        src_c = framebuf.FrameBuffer(bytearray(src_buf), 4, 4, framebuf.GS8)
+        fbuf_c.blit(src_c, 2, 2, 0x00)
+
+        if not compare_buffers(buf_c, buf_py, "blit with transparency"):
+            return False
+
+    return True
+
+
+def test_blit_mono_vlsb():
+    """Test MONO_VLSB blit"""
+    w, h = 10, 16
+    size = ((h + 7) // 8) * w
+
+    buf_py = bytearray(size)
+    fbuf_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.MONO_VLSB)
+
+    # Create 4x8 source
+    src_size = ((8 + 7) // 8) * 4
+    src_buf = bytearray(src_size)
+    src_py = framebuf_pure.FrameBuffer(src_buf, 4, 8, framebuf_pure.MONO_VLSB)
+    src_py.fill(1)
+
+    # Blit source
+    fbuf_py.blit(src_py, 2, 4)
+
+    # Verify pixels in blitted region
+    for y in range(4, 12):
+        for x in range(2, 6):
+            if fbuf_py.pixel(x, y, -1) != 1:
+                print(f"❌ Expected pixel({x},{y})=1, got {fbuf_py.pixel(x, y, -1)}")
+                return False
+
+    if HAS_C_FRAMEBUF:
+        buf_c = bytearray(size)
+        fbuf_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.MONO_VLSB)
+        src_c = framebuf.FrameBuffer(bytearray(src_size), 4, 8, framebuf.MONO_VLSB)
+        src_c.fill(1)
+        fbuf_c.blit(src_c, 2, 4)
+
+        if not compare_buffers(buf_c, buf_py, "MONO_VLSB blit"):
+            return False
+
+    return True
+
+
+def test_blit_error_cases():
+    """Test error cases for blit"""
+    w, h = 5, 4
+    fbuf = framebuf_pure.FrameBuffer(bytearray(w * h), w, h, framebuf_pure.GS8)
+
+    # Not enough elements in tuple
+    try:
+        fbuf.blit((0, 0, 0), 0, 0)
+        print("❌ Should have raised ValueError for short tuple")
+        return False
+    except ValueError:
+        pass  # Expected
+
+    # Too many elements in tuple
+    try:
+        fbuf.blit((0, 0, 0, 0, 0, 0), 0, 0)
+        print("❌ Should have raised ValueError for long tuple")
+        return False
+    except ValueError:
+        pass  # Expected
+
+    # Bytes too small
+    try:
+        fbuf.blit((b"", 1, 1, framebuf_pure.GS8), 0, 0)
+        print("❌ Should have raised ValueError for insufficient buffer")
+        return False
+    except ValueError:
+        pass  # Expected
+
+    # Invalid palette height
+    try:
+        pal = framebuf_pure.FrameBuffer(bytearray(4), 2, 2, framebuf_pure.GS8)
+        fbuf.blit((b"\x00\x00", 1, 2, framebuf_pure.GS8), 0, 0, -1, pal)
+        print("❌ Should have raised ValueError for palette height != 1")
+        return False
+    except ValueError:
+        pass  # Expected
+
+    return True
+
+
+def test_blit_out_of_bounds():
+    """Test blit completely out of bounds (should no-op)"""
+    w, h = 5, 4
+    buf_py = bytearray(w * h)
+    fbuf_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.GS8)
+    fbuf_py.fill(0x55)
+
+    src = framebuf_pure.FrameBuffer(bytearray(4), 2, 2, framebuf_pure.GS8)
+    src.fill(0xFF)
+
+    # Save original state
+    original = bytearray(buf_py)
+
+    # Blit completely out of bounds - should be no-op
+    fbuf_py.blit(src, 10, 10)
+    fbuf_py.blit(src, -5, -5)
+    fbuf_py.blit(src, 100, 0)
+    fbuf_py.blit(src, 0, 100)
+
+    # Buffer should be unchanged
+    if buf_py != original:
+        print("❌ Buffer changed after out-of-bounds blit")
+        return False
+
+    return True
+
+
+def run_blit_tests():
+    """Run blit tests"""
+    print("\n" + "="*60)
+    print("BLIT TESTS")
+    print("="*60)
+
+    tests = [
+        test_blit_gs8_basic,
+        test_blit_tuple_source,
+        test_blit_tuple_with_stride,
+        test_blit_with_palette,
+        test_blit_cross_format_palette,
+        test_blit_transparency,
+        test_blit_mono_vlsb,
+        test_blit_error_cases,
+        test_blit_out_of_bounds,
+    ]
+
+    passed = 0
+    failed = 0
+
+    for test in tests:
+        try:
+            print(f"\nRunning {test.__name__}...", end=" ")
+            if test():
+                print("✅ PASSED")
+                passed += 1
+            else:
+                failed += 1
+        except Exception as e:
+            print(f"❌ EXCEPTION in {test.__name__}: {e}")
+            import sys
+            sys.print_exception(e)
+            failed += 1
+
+    print("\n" + "="*60)
+    print(f"Results: {passed} passed, {failed} failed")
+    print("="*60)
+
+    return failed == 0
+
+
 def run_all():
     """Run all tests"""
     success = True
@@ -1340,6 +1695,10 @@ def run_all():
         success = False
 
     if not run_gs2_hmsb_tests():
+        success = False
+
+    # Phase 5: Blit tests
+    if not run_blit_tests():
         success = False
 
     if success:

@@ -254,6 +254,84 @@ class FrameBuffer:
             self.fill_rect(x, y, 1, h, c)                  # Left edge
             self.fill_rect(x + w - 1, y, 1, h, c)          # Right edge
 
+    def blit(self, fbuf, x, y, key=-1, palette=None):
+        """
+        Blit another framebuffer into this one at position (x, y)
+
+        Args:
+            fbuf: Source FrameBuffer or tuple (buffer, width, height, format[, stride])
+            x: Destination X coordinate
+            y: Destination Y coordinate
+            key: Transparency color (-1 = no transparency)
+            palette: Optional palette FrameBuffer for color translation (height=1)
+        """
+        # Parse source framebuffer
+        if isinstance(fbuf, tuple):
+            if not (4 <= len(fbuf) <= 5):
+                raise ValueError("Tuple must be (buffer, width, height, format[, stride])")
+
+            src_buf, src_width, src_height, src_format = fbuf[:4]
+            src_stride = fbuf[4] if len(fbuf) == 5 else src_width
+
+            # Create temporary FrameBuffer wrapper
+            source = _create_framebuffer(src_buf, src_width, src_height, src_format, src_stride)
+        else:
+            # Assume it's a FrameBuffer object
+            source = fbuf
+            src_width = source.width
+            src_height = source.height
+
+        # Parse palette if provided
+        pal = None
+        if palette is not None:
+            if isinstance(palette, tuple):
+                if not (4 <= len(palette) <= 5):
+                    raise ValueError("Palette tuple must be (buffer, width, height, format[, stride])")
+
+                pal_buf, pal_width, pal_height, pal_format = palette[:4]
+                pal_stride = palette[4] if len(palette) == 5 else pal_width
+                pal = _create_framebuffer(pal_buf, pal_width, pal_height, pal_format, pal_stride)
+            else:
+                pal = palette
+
+            # Validate palette: height must be 1
+            if pal.height != 1:
+                raise ValueError("Palette height must be 1")
+
+        # Early bounds check (match C implementation lines 748-756)
+        if (x >= self.width or
+            y >= self.height or
+            -x >= src_width or
+            -y >= src_height):
+            # Completely out of bounds, no-op
+            return
+
+        # Calculate clipping (match C implementation lines 758-764)
+        x0 = max(0, x)              # destination start X (clipped)
+        y0 = max(0, y)              # destination start Y (clipped)
+        x1 = max(0, -x)             # source start X offset
+        y1 = max(0, -y)             # source start Y offset
+        x0end = min(self.width, x + src_width)      # destination end X
+        y0end = min(self.height, y + src_height)    # destination end Y
+
+        # Blit loop (match C implementation lines 766-779)
+        for cy0 in range(y0, y0end):
+            cx1 = x1
+            for cx0 in range(x0, x0end):
+                # Get pixel from source (pass -1 to indicate GET operation)
+                col = source.pixel(cx1, y1, -1)
+
+                # Apply palette translation if provided
+                if pal is not None:
+                    col = pal.pixel(col, 0, -1)
+
+                # Set pixel in destination if not transparent
+                if col != key:
+                    self.pixel(cx0, cy0, col)
+
+                cx1 += 1
+            y1 += 1
+
 
 
 class FrameBufferMONO_VLSB(FrameBuffer):
@@ -1246,6 +1324,46 @@ _FRAMEBUFFER_CLASSES = {
 
 def _create_framebuffer(buffer, width, height, format, stride=None):
     """Factory function - creates appropriate subclass based on format"""
+    # Validate parameters (match C implementation lines 280-282)
+    if stride is None:
+        stride = width
+
+    if width < 1 or height < 1 or width > 0xffff or height > 0xffff or stride > 0xffff or stride < width:
+        raise ValueError("Invalid framebuffer dimensions")
+
+    # Calculate required buffer size (match C implementation lines 284-317, 322-323)
+    bpp = 1
+    height_required = height
+    width_required = width
+    strides_required = height - 1
+    stride_for_calc = stride  # Use separate variable for calculation
+
+    if format == MONO_VLSB:
+        height_required = (height + 7) & ~7
+        strides_required = height_required - 8
+    elif format == MONO_HLSB or format == MONO_HMSB:
+        stride_for_calc = (stride + 7) & ~7
+        width_required = (width + 7) & ~7
+    elif format == GS2_HMSB:
+        stride_for_calc = (stride + 3) & ~3
+        width_required = (width + 3) & ~3
+        bpp = 2
+    elif format == GS4_HMSB:
+        stride_for_calc = (stride + 1) & ~1
+        width_required = (width + 1) & ~1
+        bpp = 4
+    elif format == GS8:
+        bpp = 8
+    elif format == RGB565:
+        bpp = 16
+    else:
+        raise ValueError("Invalid format")
+
+    # Validate buffer size
+    required_size = (strides_required * stride_for_calc + (height_required - strides_required) * width_required) * bpp // 8
+    if len(buffer) < required_size:
+        raise ValueError("Buffer too small")
+
     cls = _FRAMEBUFFER_CLASSES[format]
     return cls(buffer, width, height, stride)
 

@@ -9,8 +9,7 @@ This implementation provides some functionalities of the built-in `framebuf` mod
 - All 7 color formats supported (MONO_VLSB, RGB565, GS4_HMSB, MONO_HLSB, MONO_HMSB, GS2_HMSB, GS8)
 - API-compatible with the C implementation
 - Optimized using viper decorators and ARM Thumb-2 assembly helpers
-
-At the moment, blitting is not supported.
+- Full blit support with transparency (key parameter) and palette color translation
 
 ## Background and Motivation
 
@@ -100,13 +99,14 @@ _Note: Benchmarks measure 10,000 pixel operations (100 pixels × 100 iterations)
 
 ## Testing
 
-All 31 unit tests pass across all 7 formats:
+All 40 unit tests pass across all 7 formats:
 
 - ✓ Pixel get/set operations
 - ✓ Horizontal and vertical lines
 - ✓ Fill operations
 - ✓ Rectangle drawing
 - ✓ Edge cases and bounds checking
+- ✓ Blit operations (same format, cross-format with palette, transparency, stride, clipping)
 
 ## Usage
 
@@ -124,6 +124,21 @@ fb.hline(0, 0, 128, 1)        # Horizontal line
 fb.vline(0, 0, 64, 1)         # Vertical line
 fb.rect(10, 10, 20, 20, 1)    # Rectangle outline
 fb.fill_rect(40, 40, 10, 10, 1)  # Filled rectangle
+
+# Blit operations
+sprite = framebuf.FrameBuffer(bytearray(8), 8, 8, framebuf.MONO_VLSB)
+sprite.fill(1)
+fb.blit(sprite, 50, 30)       # Copy sprite to position (50, 30)
+fb.blit(sprite, 60, 40, key=0)  # Copy with transparency (skip color 0)
+
+# Cross-format blit with palette
+icon_mono = framebuf.FrameBuffer(bytearray(8), 8, 8, framebuf.MONO_HLSB)
+icon_mono.pixel(3, 3, 1)
+rgb_display = framebuf.FrameBuffer(bytearray(128), 8, 8, framebuf.RGB565)
+palette = framebuf.FrameBuffer(bytearray(4), 2, 1, framebuf.RGB565)
+palette.pixel(0, 0, 0x0000)   # Background: black
+palette.pixel(1, 0, 0xF800)   # Foreground: red
+rgb_display.blit(icon_mono, 0, 0, -1, palette)  # Convert mono to RGB
 ```
 
 ## Optimization Techniques

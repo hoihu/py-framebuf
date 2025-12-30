@@ -3,7 +3,9 @@
     "allow": [
       "Bash(ls:*)",
       "Bash(./venvdev/bin/python -m there:*)",
-      "Bash(./venvdev/bin/python:*)"
+      "Bash(./venvdev/bin/python:*)",
+      "Skill(micropython-repl)",
+      "Skill(micropython-repl:*)"
     ]
   }
 }
