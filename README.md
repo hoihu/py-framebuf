@@ -97,6 +97,17 @@ Comparing C implementation vs pure Python viper implementation (lower ratio is b
 
 _Note: Benchmarks measure 10,000 pixel operations (100 pixels × 100 iterations)_
 
+### Blit Operations
+
+| Format    | Operation | Sprite Size | C (µs) | Viper (µs) | Ratio |
+| --------- | --------- | ----------- | ------ | ---------- | ----- |
+| MONO_VLSB | blit      | 8x8         | 53.3   | 2800       | 52.4× |
+| MONO_VLSB | blit+key  | 8x8         | 54.0   | 2800       | 51.8× |
+| RGB565    | blit      | 16x16       | 132.1  | 10600      | 79.9× |
+| RGB565    | blit+palette | 8x8 (MONO→RGB) | 59.2 | 3800 | 64.5× |
+
+**Blit operations are 50-80× slower** than C due to pixel-by-pixel copying through the Python pixel() method. This is expected as blit multiplies the per-pixel overhead by the sprite size.
+
 ## Testing
 
 All 40 unit tests pass across all 7 formats:
@@ -151,12 +162,15 @@ rgb_display.blit(icon_mono, 0, 0, -1, palette)  # Convert mono to RGB
 ## Limitations
 
 - Pixel and line operations are 2-6× slower than C
-- Flash usage may be higher, RAM usage should be roughly similar.
+- Blit operations are 50-80× slower than C (due to Python pixel() overhead)
+  - For performance-critical blitting, consider using the C framebuf module
+  - Pure-python blit is suitable for occasional sprite updates, not animation
+- Flash usage may be higher, RAM usage should be roughly similar
 - Some edge cases may behave differently than C implementation
 - Still needs more testing!
 
 ## Files
 
-- `framebuf_pure.py` - Main implementation (1,253 lines)
-- `test_framebuf.py` - Test suite (31 tests)
-- `benchmark_framebuf.py` - Performance benchmarks
+- `framebuf_pure.py` - Main implementation (1,372 lines) with full blit support
+- `test_framebuf.py` - Test suite (40 tests including 9 blit tests)
+- `benchmark_framebuf.py` - Performance benchmarks (includes blit benchmarks)
