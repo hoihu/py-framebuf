@@ -101,16 +101,28 @@ _Note: Benchmarks measure 10,000 pixel operations (100 pixels × 100 iterations)
 
 | Format    | Operation | Sprite Size | C (µs) | Viper (µs) | Ratio |
 | --------- | --------- | ----------- | ------ | ---------- | ----- |
-| MONO_VLSB | blit      | 8x8         | 53.3   | 2800       | 52.4× |
-| MONO_VLSB | blit+key  | 8x8         | 54.0   | 2800       | 51.8× |
-| RGB565    | blit      | 16x16       | 132.1  | 10600      | 79.9× |
-| RGB565    | blit+palette | 8x8 (MONO→RGB) | 59.2 | 3800 | 64.5× |
+| RGB565    | blit (same format) | 16x16 | 132.1  | 238.5      | **1.8×** |
+| GS8       | blit (same format) | 16x16 | 139.8  | 238.4      | **1.7×** |
+| RGB565    | blit MONO_HMSB+palette | 8x8 text/icon | 59.2 | 210.9 | **3.6×** |
+| RGB565    | blit MONO_HLSB+palette | 8x8 (unoptimized) | 59.2 | 3800 | 64.5× |
 
-**Blit operations are 50-80× slower** than C due to pixel-by-pixel copying through the Python pixel() method. This is expected as blit multiplies the per-pixel overhead by the sprite size.
+**Same-format blit operations are 1.7-1.8× slower** than C thanks to viper optimization with direct buffer access!
+
+**MONO_HMSB → RGB565 text rendering is only 3.6× slower** than C (optimized path for icons/text with palette).
+
+**Unoptimized cross-format blits** with palette still use the slower pixel-by-pixel approach (65× slower).
+
+**Optimization Details:**
+- RGB565 and GS8 formats have viper-optimized `_blit_same_format()` methods
+- RGB565 has viper-optimized `_blit_mono_hmsb_palette()` for text rendering (19× faster than unoptimized!)
+- Uses direct buffer access via `ptr16()` / `ptr8()` and bit extraction instead of calling `pixel()`
+- Fast paths automatically detected and used when applicable
+- **44× performance improvement** over unoptimized version for same-format blits
+- **19× performance improvement** for MONO_HMSB → RGB565 text rendering
 
 ## Testing
 
-All 40 unit tests pass across all 7 formats:
+All 41 unit tests pass across all 7 formats:
 
 - ✓ Pixel get/set operations
 - ✓ Horizontal and vertical lines
@@ -162,15 +174,20 @@ rgb_display.blit(icon_mono, 0, 0, -1, palette)  # Convert mono to RGB
 ## Limitations
 
 - Pixel and line operations are 2-6× slower than C
-- Blit operations are 50-80× slower than C (due to Python pixel() overhead)
-  - For performance-critical blitting, consider using the C framebuf module
-  - Pure-python blit is suitable for occasional sprite updates, not animation
+- Same-format blit operations are 1.7-1.8× slower than C (viper-optimized)
+  - Suitable for sprite rendering and UI updates
+  - Optimized for RGB565 and GS8 formats
+- MONO_HMSB → RGB565 palette blit is 3.6× slower (viper-optimized for text rendering)
+  - Suitable for rendering text and icons to color displays
+  - 19× faster than unoptimized cross-format blits
+- Other cross-format blits with palette are 65× slower (uses pixel-by-pixel conversion)
+  - Only use for occasional color space conversions, not real-time animation
 - Flash usage may be higher, RAM usage should be roughly similar
 - Some edge cases may behave differently than C implementation
 - Still needs more testing!
 
 ## Files
 
-- `framebuf_pure.py` - Main implementation (1,372 lines) with full blit support
-- `test_framebuf.py` - Test suite (40 tests including 9 blit tests)
+- `framebuf_pure.py` - Main implementation (1,605 lines) with viper-optimized blit support
+- `test_framebuf.py` - Test suite (41 tests including 10 blit tests)
 - `benchmark_framebuf.py` - Performance benchmarks (includes blit benchmarks)

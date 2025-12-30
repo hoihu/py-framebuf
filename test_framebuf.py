@@ -107,7 +107,7 @@ def test_mono_vlsb_pixel_get():
     for x, y, expected in test_pixels:
         if HAS_C_FRAMEBUF:
             val_c = fb_c.pixel(x, y)
-            val_py = fb_py.pixel(x, y)
+            val_py = fb_py.pixel(x, y, -1)
             if val_c != val_py:
                 print(f"❌ FAILED: pixel({x}, {y}) returned {val_py}, expected {val_c}")
                 return False
@@ -115,7 +115,7 @@ def test_mono_vlsb_pixel_get():
                 print(f"❌ FAILED: pixel({x}, {y}) returned {val_c}, expected {expected}")
                 return False
         else:
-            val_py = fb_py.pixel(x, y)
+            val_py = fb_py.pixel(x, y, -1)
             if val_py != expected:
                 print(f"❌ FAILED: pixel({x}, {y}) returned {val_py}, expected {expected}")
                 return False
@@ -401,12 +401,12 @@ def test_rgb565_pixel():
         x, y = i % w, i // w
         if HAS_C_FRAMEBUF:
             val_c = fb_c.pixel(x, y)
-            val_py = fb_py.pixel(x, y)
+            val_py = fb_py.pixel(x, y, -1)
             if val_c != val_py or val_c != color:
                 print(f"❌ FAILED: RGB565 pixel({x}, {y}) get mismatch")
                 return False
         else:
-            val_py = fb_py.pixel(x, y)
+            val_py = fb_py.pixel(x, y, -1)
             if val_py != color:
                 print(f"❌ FAILED: RGB565 pixel({x}, {y}) returned {val_py:04x}, expected {color:04x}")
                 return False
@@ -517,12 +517,12 @@ def test_gs8_pixel():
         x, y = i % w, i // w
         if HAS_C_FRAMEBUF:
             val_c = fb_c.pixel(x, y)
-            val_py = fb_py.pixel(x, y)
+            val_py = fb_py.pixel(x, y, -1)
             if val_c != val_py or val_c != gray:
                 print(f"❌ FAILED: GS8 pixel({x}, {y}) get mismatch")
                 return False
         else:
-            val_py = fb_py.pixel(x, y)
+            val_py = fb_py.pixel(x, y, -1)
             if val_py != gray:
                 print(f"❌ FAILED: GS8 pixel({x}, {y}) returned {val_py}, expected {gray}")
                 return False
@@ -858,12 +858,12 @@ def test_gs4_hmsb_pixel():
         x, y = i % w, i // w
         if HAS_C_FRAMEBUF:
             val_c = fb_c.pixel(x, y)
-            val_py = fb_py.pixel(x, y)
+            val_py = fb_py.pixel(x, y, -1)
             if val_c != val_py or val_c != val:
                 print(f"❌ FAILED: GS4_HMSB pixel({x}, {y}) get mismatch")
                 return False
         else:
-            val_py = fb_py.pixel(x, y)
+            val_py = fb_py.pixel(x, y, -1)
             if val_py != val:
                 print(f"❌ FAILED: GS4_HMSB pixel({x}, {y}) returned {val_py}, expected {val}")
                 return False
@@ -980,12 +980,12 @@ def test_gs2_hmsb_pixel():
         x, y = i % w, i // w
         if HAS_C_FRAMEBUF:
             val_c = fb_c.pixel(x, y)
-            val_py = fb_py.pixel(x, y)
+            val_py = fb_py.pixel(x, y, -1)
             if val_c != val_py or val_c != val:
                 print(f"❌ FAILED: GS2_HMSB pixel({x}, {y}) get mismatch")
                 return False
         else:
-            val_py = fb_py.pixel(x, y)
+            val_py = fb_py.pixel(x, y, -1)
             if val_py != val:
                 print(f"❌ FAILED: GS2_HMSB pixel({x}, {y}) returned {val_py}, expected {val}")
                 return False
@@ -1493,6 +1493,87 @@ def test_blit_cross_format_palette():
     return True
 
 
+def test_blit_mono_hmsb_to_rgb565():
+    """Test optimized MONO_HMSB to RGB565 blit with palette (text/icon rendering)"""
+    # Create MONO_HMSB source (8x8) - horizontal MSB format (typical for text)
+    w, h = 8, 8
+    src_buf_py = bytearray(w * h // 8)
+    src_py = framebuf_pure.FrameBuffer(src_buf_py, w, h, framebuf_pure.MONO_HMSB)
+
+    # Draw a diagonal line
+    src_py.pixel(0, 0, 1)
+    src_py.pixel(1, 1, 1)
+    src_py.pixel(2, 2, 1)
+    src_py.pixel(7, 7, 1)
+
+    # Create RGB565 destination (16x16)
+    wd, hd = 16, 16
+    dest_buf_py = bytearray(wd * hd * 2)
+    dest_py = framebuf_pure.FrameBuffer(dest_buf_py, wd, hd, framebuf_pure.RGB565)
+
+    # Create RGB565 palette (2 colors for monochrome)
+    bg = 0x0000  # Black background
+    fg = 0xFFFF  # White foreground
+    pal_buf_py = bytearray(2 * 2)  # 2 pixels * 2 bytes
+    palette_py = framebuf_pure.FrameBuffer(pal_buf_py, 2, 1, framebuf_pure.RGB565)
+    palette_py.pixel(0, 0, bg)
+    palette_py.pixel(1, 0, fg)
+
+    # Blit with palette (should use optimized path)
+    dest_py.blit(src_py, 0, 0, -1, palette_py)
+
+    # Verify foreground pixels
+    if dest_py.pixel(0, 0, -1) != fg:
+        print(f"❌ Expected pixel(0,0)={fg:04x}, got {dest_py.pixel(0, 0, -1):04x}")
+        return False
+    if dest_py.pixel(1, 1, -1) != fg:
+        print(f"❌ Expected pixel(1,1)={fg:04x}, got {dest_py.pixel(1, 1, -1):04x}")
+        return False
+    if dest_py.pixel(2, 2, -1) != fg:
+        print(f"❌ Expected pixel(2,2)={fg:04x}, got {dest_py.pixel(2, 2, -1):04x}")
+        return False
+    if dest_py.pixel(7, 7, -1) != fg:
+        print(f"❌ Expected pixel(7,7)={fg:04x}, got {dest_py.pixel(7, 7, -1):04x}")
+        return False
+
+    # Verify background pixels
+    if dest_py.pixel(0, 1, -1) != bg:
+        print(f"❌ Expected pixel(0,1)={bg:04x}, got {dest_py.pixel(0, 1, -1):04x}")
+        return False
+    if dest_py.pixel(3, 3, -1) != bg:
+        print(f"❌ Expected pixel(3,3)={bg:04x}, got {dest_py.pixel(3, 3, -1):04x}")
+        return False
+
+    # Verify pixels outside blit area are still 0
+    if dest_py.pixel(8, 8, -1) != 0:
+        print(f"❌ Expected pixel(8,8)=0000, got {dest_py.pixel(8, 8, -1):04x}")
+        return False
+
+    if HAS_C_FRAMEBUF:
+        # Compare with C implementation
+        src_buf_c = bytearray(w * h // 8)
+        src_c = framebuf.FrameBuffer(src_buf_c, w, h, framebuf.MONO_HMSB)
+        src_c.pixel(0, 0, 1)
+        src_c.pixel(1, 1, 1)
+        src_c.pixel(2, 2, 1)
+        src_c.pixel(7, 7, 1)
+
+        dest_buf_c = bytearray(wd * hd * 2)
+        dest_c = framebuf.FrameBuffer(dest_buf_c, wd, hd, framebuf.RGB565)
+
+        pal_buf_c = bytearray(2 * 2)
+        palette_c = framebuf.FrameBuffer(pal_buf_c, 2, 1, framebuf.RGB565)
+        palette_c.pixel(0, 0, bg)
+        palette_c.pixel(1, 0, fg)
+
+        dest_c.blit(src_c, 0, 0, -1, palette_c)
+
+        if not compare_buffers(dest_buf_c, dest_buf_py, "MONO_HMSB->RGB565 palette blit"):
+            return False
+
+    return True
+
+
 def test_blit_transparency():
     """Test blit with transparency key"""
     w, h = 8, 8
@@ -1638,6 +1719,7 @@ def run_blit_tests():
         test_blit_tuple_with_stride,
         test_blit_with_palette,
         test_blit_cross_format_palette,
+        test_blit_mono_hmsb_to_rgb565,
         test_blit_transparency,
         test_blit_mono_vlsb,
         test_blit_error_cases,

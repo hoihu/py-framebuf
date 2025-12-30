@@ -265,6 +265,25 @@ def benchmark_rgb565():
     print(f"  Ratio:      {ratio:.2f}x {'slower' if ratio > 1 else 'faster'}")
     results.append(("RGB565", "blit_palette", time_c, time_py, ratio))
 
+    # Benchmark MONO_HMSB -> RGB565 with palette (optimized for text/icon rendering)
+    print("\nOperation: blit(mono_hmsb_8x8, palette) - optimized text rendering")
+    mono_hmsb_size = ((8 + 7) // 8) * 8
+    mono_hmsb_buf_c = bytearray(mono_hmsb_size)
+    mono_hmsb_buf_py = bytearray(mono_hmsb_size)
+    mono_hmsb_c = framebuf.FrameBuffer(mono_hmsb_buf_c, 8, 8, framebuf.MONO_HMSB)
+    mono_hmsb_py = framebuf_pure.FrameBuffer(mono_hmsb_buf_py, 8, 8, framebuf_pure.MONO_HMSB)
+    mono_hmsb_c.fill(1)
+    mono_hmsb_py.fill(1)
+
+    # Reuse palette from previous test
+    time_c = benchmark(lambda: fb_c.blit(mono_hmsb_c, 28, 28, -1, pal_c), 300)
+    time_py = benchmark(lambda: fb_py.blit(mono_hmsb_py, 28, 28, -1, pal_py), 300)
+    ratio = time_py / time_c
+    print(f"  C impl:     {format_time(time_c)}")
+    print(f"  Viper impl: {format_time(time_py)}")
+    print(f"  Ratio:      {ratio:.2f}x {'slower' if ratio > 1 else 'faster'}")
+    results.append(("RGB565", "blit_mono_hmsb_palette", time_c, time_py, ratio))
+
 
 def benchmark_gs8():
     """Benchmark GS8 128x128 (Grayscale display)"""
