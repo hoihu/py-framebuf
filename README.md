@@ -4,11 +4,13 @@ A pure Python implementation of MicroPython's framebuffer module using `@micropy
 
 ## Overview
 
-This implementation provides a drop-in replacement for the built-in C `framebuf` module with:
+This implementation provides some functionalities of the built-in `framebuf` module in MicroPython. It supports:
 
 - All 7 color formats supported (MONO_VLSB, RGB565, GS4_HMSB, MONO_HLSB, MONO_HMSB, GS2_HMSB, GS8)
 - API-compatible with the C implementation
 - Optimized using viper decorators and ARM Thumb-2 assembly helpers
+
+At the moment, blitting is not supported.
 
 ## Background and Motivation
 
