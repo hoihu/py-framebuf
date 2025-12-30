@@ -12,7 +12,7 @@ This implementation provides a drop-in replacement for the built-in C `framebuf`
 
 ## Background and Motivation
 
-Some HW / Displays require other colorm format than the (hard coded) framebuf library from
+Some HW / Displays require other color format than the (hard coded) framebuf library from
 MicroPython.
 
 For example, a LED strip with WS2812 chips has 8 bits per color, making it a RGB888 format.
