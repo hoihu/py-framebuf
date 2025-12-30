@@ -2,7 +2,7 @@
   "permissions": {
     "allow": [
       "Bash(ls:*)",
-      "Bash(./venvdev/bin/python -m there -p rfc2217://host.docker.internal:2217 push fb_opt.py /)",
+      "Bash(./venvdev/bin/python -m there:*)",
       "Bash(./venvdev/bin/python:*)"
     ]
   }
