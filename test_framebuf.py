@@ -1643,6 +1643,250 @@ def run_blit_tests():
     return failed == 0
 
 
+# ========================================================================
+# Line Tests
+# ========================================================================
+
+def test_line_basic():
+    """Test basic line drawing (horizontal, vertical, diagonal)"""
+    w, h = 20, 20
+    size = ((h + 7) // 8) * w  # MONO_VLSB format
+
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.MONO_VLSB)
+
+    buf_py = bytearray(size)
+    fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.MONO_VLSB)
+
+    # Horizontal line
+    fb_c.line(0, 5, 15, 5, 1)
+    fb_py.line(0, 5, 15, 5, 1)
+
+    if not compare_buffers(buf_c, buf_py, "line() horizontal"):
+        return False
+
+    # Vertical line
+    fb_c.line(10, 0, 10, 15, 1)
+    fb_py.line(10, 0, 10, 15, 1)
+
+    if not compare_buffers(buf_c, buf_py, "line() vertical"):
+        return False
+
+    # Diagonal line (45 degrees)
+    fb_c.line(0, 0, 10, 10, 1)
+    fb_py.line(0, 0, 10, 10, 1)
+
+    if not compare_buffers(buf_c, buf_py, "line() diagonal 45°"):
+        return False
+
+    print("✓ line() basic test passed")
+    return True
+
+
+def test_line_all_octants():
+    """Test line drawing in all 8 octants"""
+    w, h = 40, 40
+    size = ((h + 7) // 8) * w
+
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.MONO_VLSB)
+
+    buf_py = bytearray(size)
+    fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.MONO_VLSB)
+
+    cx, cy = 20, 20  # Center point
+
+    # All 8 octants from center
+    test_lines = [
+        (cx, cy, cx + 10, cy + 3),   # Octant 0: East, shallow
+        (cx, cy, cx + 3, cy + 10),   # Octant 1: North-East, steep
+        (cx, cy, cx - 3, cy + 10),   # Octant 2: North-West, steep
+        (cx, cy, cx - 10, cy + 3),   # Octant 3: West, shallow
+        (cx, cy, cx - 10, cy - 3),   # Octant 4: West, shallow down
+        (cx, cy, cx - 3, cy - 10),   # Octant 5: South-West, steep
+        (cx, cy, cx + 3, cy - 10),   # Octant 6: South-East, steep
+        (cx, cy, cx + 10, cy - 3),   # Octant 7: East, shallow down
+    ]
+
+    for x1, y1, x2, y2 in test_lines:
+        fb_c.line(x1, y1, x2, y2, 1)
+        fb_py.line(x1, y1, x2, y2, 1)
+
+    if not compare_buffers(buf_c, buf_py, "line() all octants"):
+        return False
+
+    print("✓ line() all octants test passed")
+    return True
+
+
+def test_line_clipping():
+    """Test line clipping (partially out of bounds)"""
+    w, h = 20, 20
+    size = ((h + 7) // 8) * w
+
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.MONO_VLSB)
+
+    buf_py = bytearray(size)
+    fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.MONO_VLSB)
+
+    # Line starting outside, ending inside
+    fb_c.line(-5, 5, 10, 5, 1)
+    fb_py.line(-5, 5, 10, 5, 1)
+
+    if not compare_buffers(buf_c, buf_py, "line() clip start"):
+        return False
+
+    # Line starting inside, ending outside
+    fb_c.line(5, 10, 25, 15, 1)
+    fb_py.line(5, 10, 25, 15, 1)
+
+    if not compare_buffers(buf_c, buf_py, "line() clip end"):
+        return False
+
+    # Line completely outside
+    fb_c.line(-10, -10, -5, -5, 1)
+    fb_py.line(-10, -10, -5, -5, 1)
+
+    if not compare_buffers(buf_c, buf_py, "line() completely outside"):
+        return False
+
+    # Diagonal line crossing through
+    fb_c.line(-5, -5, 25, 25, 1)
+    fb_py.line(-5, -5, 25, 25, 1)
+
+    if not compare_buffers(buf_c, buf_py, "line() crossing through"):
+        return False
+
+    print("✓ line() clipping test passed")
+    return True
+
+
+def test_line_single_pixel():
+    """Test single-pixel lines (same start and end point)"""
+    w, h = 10, 10
+    size = ((h + 7) // 8) * w
+
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.MONO_VLSB)
+
+    buf_py = bytearray(size)
+    fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.MONO_VLSB)
+
+    # Line with same start and end
+    fb_c.line(5, 5, 5, 5, 1)
+    fb_py.line(5, 5, 5, 5, 1)
+
+    if not compare_buffers(buf_c, buf_py, "line() single pixel"):
+        return False
+
+    # Another single pixel
+    fb_c.line(3, 7, 3, 7, 1)
+    fb_py.line(3, 7, 3, 7, 1)
+
+    if not compare_buffers(buf_c, buf_py, "line() single pixel 2"):
+        return False
+
+    print("✓ line() single pixel test passed")
+    return True
+
+
+def test_line_rgb565():
+    """Test line() with RGB565 format"""
+    w, h = 20, 20
+    size = w * h * 2  # 2 bytes per pixel
+
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.RGB565)
+
+    buf_py = bytearray(size)
+    fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.RGB565)
+
+    # RGB565 color (red)
+    red = 0xF800
+
+    # Draw several lines
+    fb_c.line(0, 0, 19, 19, red)
+    fb_py.line(0, 0, 19, 19, red)
+
+    fb_c.line(0, 10, 19, 10, red)
+    fb_py.line(0, 10, 19, 10, red)
+
+    fb_c.line(10, 0, 10, 19, red)
+    fb_py.line(10, 0, 10, 19, red)
+
+    if not compare_buffers(buf_c, buf_py, "line() RGB565"):
+        return False
+
+    print("✓ line() RGB565 test passed")
+    return True
+
+
+def test_line_gs8():
+    """Test line() with GS8 format"""
+    w, h = 20, 20
+    size = w * h
+
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.GS8)
+
+    buf_py = bytearray(size)
+    fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.GS8)
+
+    # Draw lines with different gray levels
+    fb_c.line(0, 0, 19, 19, 128)
+    fb_py.line(0, 0, 19, 19, 128)
+
+    fb_c.line(0, 19, 19, 0, 255)
+    fb_py.line(0, 19, 19, 0, 255)
+
+    fb_c.line(5, 0, 5, 19, 64)
+    fb_py.line(5, 0, 5, 19, 64)
+
+    if not compare_buffers(buf_c, buf_py, "line() GS8"):
+        return False
+
+    print("✓ line() GS8 test passed")
+    return True
+
+
+def run_line_tests():
+    """Run all line() tests"""
+    print("\n" + "="*60)
+    print("Line Tests")
+    print("="*60)
+
+    tests = [
+        ("line() basic", test_line_basic),
+        ("line() all octants", test_line_all_octants),
+        ("line() clipping", test_line_clipping),
+        ("line() single pixel", test_line_single_pixel),
+        ("line() RGB565", test_line_rgb565),
+        ("line() GS8", test_line_gs8),
+    ]
+
+    passed = 0
+    failed = 0
+
+    for name, test_func in tests:
+        try:
+            if test_func():
+                passed += 1
+            else:
+                failed += 1
+        except Exception as e:
+            print(f"❌ EXCEPTION in {name}: {e}")
+            import sys
+            sys.print_exception(e)
+            failed += 1
+
+    print("\n" + "="*60)
+    print(f"Line Tests Results: {passed} passed, {failed} failed")
+    print("="*60)
+
+    return failed == 0
+
+
 def run_all():
     """Run all tests"""
     success = True
@@ -1674,6 +1918,10 @@ def run_all():
 
     # Phase 5: Blit tests
     if not run_blit_tests():
+        success = False
+
+    # Phase 6: Line tests
+    if not run_line_tests():
         success = False
 
     if success:

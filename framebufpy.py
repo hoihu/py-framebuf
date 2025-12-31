@@ -41,6 +41,16 @@ GS8 = 6
 # Aliases for compatibility
 MVLSB = MONO_VLSB
 
+# Ellipse quadrant masks
+# Q2 Q1
+# Q3 Q4
+ELLIPSE_MASK_FILL = 0x10
+ELLIPSE_MASK_ALL = 0x0f
+ELLIPSE_MASK_Q1 = 0x01  # Top-right
+ELLIPSE_MASK_Q2 = 0x02  # Top-left
+ELLIPSE_MASK_Q3 = 0x04  # Bottom-left
+ELLIPSE_MASK_Q4 = 0x08  # Bottom-right
+
 
 # ====================================================================
 # ASM_THUMB OPTIMIZED HELPERS
@@ -152,7 +162,6 @@ def _asm_fill_rgb565(r0, r1, r2):
     strh(r2, [r0, 0])   # Store halfword (1 pixel = 2 bytes)
 
     label(END)
-
 
 
 class FrameBufferBase:
@@ -357,6 +366,416 @@ class FrameBufferBase:
 
                     cx1 += 1
                 y1 += 1
+
+    @micropython.viper
+    def _setpixel_checked(self, x: int, y: int, c: int):
+        """
+        Set pixel with bounds checking (helper for line/ellipse/poly)
+
+        Args:
+            x: X coordinate
+            y: Y coordinate
+            c: Color value
+        """
+        width = int(self.width)
+        height = int(self.height)
+        if 0 <= x < width and 0 <= y < height:
+            self.pixel(x, y, c)
+
+    @micropython.viper
+    def line(self, x1: int, y1: int, x2: int, y2: int, col: int):
+        """
+        Draw a line from (x1, y1) to (x2, y2) using Bresenham's algorithm
+
+        Args:
+            x1: Start X coordinate
+            y1: Start Y coordinate
+            x2: End X coordinate
+            y2: End Y coordinate
+            col: Color value
+        """
+        # Calculate deltas and steps
+        dx = x2 - x1
+        if dx > 0:
+            sx = 1
+        else:
+            dx = -dx
+            sx = -1
+
+        dy = y2 - y1
+        if dy > 0:
+            sy = 1
+        else:
+            dy = -dy
+            sy = -1
+
+        # Check if line is steep (|dy| > |dx|)
+        # If steep, swap x/y to avoid gaps in the line
+        steep = False
+        if dy > dx:
+            # Swap x1 <-> y1
+            temp = x1
+            x1 = y1
+            y1 = temp
+            # Swap dx <-> dy
+            temp = dx
+            dx = dy
+            dy = temp
+            # Swap sx <-> sy
+            temp = sx
+            sx = sy
+            sy = temp
+            steep = True
+
+        # Bresenham's algorithm - iterate along the primary axis
+        width = int(self.width)
+        height = int(self.height)
+        e = 2 * dy - dx
+
+        for i in range(dx):
+            # Plot pixel with bounds checking
+            if steep:
+                # Steep line: y is primary axis, so check (y1, x1)
+                if 0 <= y1 < width and 0 <= x1 < height:
+                    self.pixel(y1, x1, col)
+            else:
+                # Shallow line: x is primary axis, so check (x1, y1)
+                if 0 <= x1 < width and 0 <= y1 < height:
+                    self.pixel(x1, y1, col)
+
+            # Update error term and step along secondary axis if needed
+            while e >= 0:
+                y1 += sy
+                e -= 2 * dx
+
+            # Step along primary axis
+            x1 += sx
+            e += 2 * dy
+
+        # Draw final pixel (x2, y2) with bounds checking
+        self._setpixel_checked(x2, y2, col)
+
+    def text(self, s, x, y, col=1):
+        """
+        Render text using 8x8 font
+
+        Args:
+            s: String to render
+            x: Starting X coordinate
+            y: Starting Y coordinate
+            col: Color value (default 1)
+        """
+        from font_petme128_8x8 import FONT_PETME128_8X8
+
+        width = self.width
+        height = self.height
+        x0 = x
+
+        # Loop over each character
+        for c in s:
+            # Get character code and validate range
+            chr_code = ord(c)
+            if chr_code < 32 or chr_code > 127:
+                chr_code = 127  # Use checkerboard for invalid chars
+
+            # Get font data offset for this character (8 bytes per char)
+            font_offset = (chr_code - 32) * 8
+
+            # Render 8 columns (each character is 8 pixels wide)
+            for j in range(8):
+                if 0 <= x0 < width:  # Clip X coordinate
+                    # Get column data (vertical line of 8 pixels, LSB at top)
+                    vline_data = FONT_PETME128_8X8[font_offset + j]
+                    y_pos = y
+
+                    # Scan over vertical column (8 pixels)
+                    for row in range(8):
+                        if vline_data & (1 << row):  # Check if pixel is set
+                            if 0 <= y_pos < height:  # Clip Y coordinate
+                                self.pixel(x0, y_pos, col)
+                        y_pos += 1
+
+                x0 += 1  # Move to next column
+
+    @micropython.viper
+    def scroll(self, xstep: int, ystep: int):
+        """
+        Scroll the framebuffer by xstep and ystep pixels
+
+        Args:
+            xstep: Horizontal scroll distance (positive = right, negative = left)
+            ystep: Vertical scroll distance (positive = down, negative = up)
+        """
+        width = int(self.width)
+        height = int(self.height)
+
+        # Early return if scroll distance >= dimension
+        if xstep < 0:
+            if -xstep >= width:
+                return
+        else:
+            if xstep >= width:
+                return
+
+        if ystep < 0:
+            if -ystep >= height:
+                return
+        else:
+            if ystep >= height:
+                return
+
+        # Determine X iteration direction
+        if xstep < 0:
+            # Scrolling left: iterate left-to-right
+            sx = 0
+            xend = width + xstep
+            dx = 1
+        else:
+            # Scrolling right: iterate right-to-left
+            sx = width - 1
+            xend = xstep - 1
+            dx = -1
+
+        # Determine Y iteration direction
+        if ystep < 0:
+            # Scrolling up: iterate top-to-bottom
+            sy = 0
+            yend = height + ystep
+            dy = 1
+        else:
+            # Scrolling down: iterate bottom-to-top
+            sy = height - 1
+            yend = ystep - 1
+            dy = -1
+
+        # Copy pixels from (x-xstep, y-ystep) to (x, y)
+        y = sy
+        while y != yend:
+            x = sx
+            while x != xend:
+                # Get pixel from source position
+                col = self.pixel(x - xstep, y - ystep, -1)
+                # Set pixel at destination position
+                self.pixel(x, y, col)
+                x += dx
+            y += dy
+
+    @micropython.viper
+    def _draw_ellipse_points(self, cx: int, cy: int, x: int, y: int, col: int, mask: int):
+        """
+        Helper for ellipse() - draws 4-way symmetric points with quadrant masking
+
+        Args:
+            cx: Center X
+            cy: Center Y
+            x: X offset from center
+            y: Y offset from center
+            col: Color value
+            mask: Quadrant mask (ELLIPSE_MASK_*)
+        """
+        # Local constants for viper
+        MASK_FILL = int(0x10)
+        MASK_Q1 = int(0x01)
+        MASK_Q2 = int(0x02)
+        MASK_Q3 = int(0x04)
+        MASK_Q4 = int(0x08)
+
+        if mask & MASK_FILL:
+            # Fill mode: draw horizontal spans
+            if mask & MASK_Q1:
+                self.fill_rect(cx, cy - y, x + 1, 1, col)
+            if mask & MASK_Q2:
+                self.fill_rect(cx - x, cy - y, x + 1, 1, col)
+            if mask & MASK_Q3:
+                self.fill_rect(cx - x, cy + y, x + 1, 1, col)
+            if mask & MASK_Q4:
+                self.fill_rect(cx, cy + y, x + 1, 1, col)
+        else:
+            # Outline mode: draw individual pixels
+            if mask & MASK_Q1:
+                self._setpixel_checked(cx + x, cy - y, col)
+            if mask & MASK_Q2:
+                self._setpixel_checked(cx - x, cy - y, col)
+            if mask & MASK_Q3:
+                self._setpixel_checked(cx - x, cy + y, col)
+            if mask & MASK_Q4:
+                self._setpixel_checked(cx + x, cy + y, col)
+
+    def ellipse(self, cx, cy, xradius, yradius, col, fill=False, mask=0x0f):
+        """
+        Draw an ellipse using the midpoint ellipse algorithm
+
+        Args:
+            cx: Center X coordinate
+            cy: Center Y coordinate
+            xradius: X radius (horizontal)
+            yradius: Y radius (vertical)
+            col: Color value
+            fill: Fill flag (optional, default False)
+            mask: Quadrant mask (optional, default 0x0f = all quadrants)
+        """
+        # Combine fill flag with mask
+        ellipse_mask = mask & 0x0f  # MASK_ALL
+        if fill:
+            ellipse_mask |= 0x10  # MASK_FILL
+
+        # Special case: zero radius (single point)
+        if xradius == 0 and yradius == 0:
+            if ellipse_mask & 0x0f:
+                self._setpixel_checked(cx, cy, col)
+            return
+
+        # Phase 1: Top/bottom arcs (where slope dy/dx > -1)
+        two_asquare = 2 * xradius * xradius
+        two_bsquare = 2 * yradius * yradius
+        x = xradius
+        y = 0
+        xchange = yradius * yradius * (1 - 2 * xradius)
+        ychange = xradius * xradius
+        ellipse_error = 0
+        stoppingx = two_bsquare * xradius
+        stoppingy = 0
+
+        while stoppingx >= stoppingy:
+            self._draw_ellipse_points(cx, cy, x, y, col, ellipse_mask)
+            y += 1
+            stoppingy += two_asquare
+            ellipse_error += ychange
+            ychange += two_asquare
+            if (2 * ellipse_error + xchange) > 0:
+                x -= 1
+                stoppingx -= two_bsquare
+                ellipse_error += xchange
+                xchange += two_bsquare
+
+        # Phase 2: Left/right arcs (where slope dy/dx < -1)
+        x = 0
+        y = yradius
+        xchange = yradius * yradius
+        ychange = xradius * xradius * (1 - 2 * yradius)
+        ellipse_error = 0
+        stoppingx = 0
+        stoppingy = two_asquare * yradius
+
+        while stoppingx <= stoppingy:
+            self._draw_ellipse_points(cx, cy, x, y, col, ellipse_mask)
+            x += 1
+            stoppingx += two_bsquare
+            ellipse_error += xchange
+            xchange += two_bsquare
+            if (2 * ellipse_error + ychange) > 0:
+                y -= 1
+                stoppingy -= two_asquare
+                ellipse_error += ychange
+                ychange += two_asquare
+
+    def poly(self, x, y, coords, col, fill=False):
+        """
+        Draw a polygon outline or filled polygon
+
+        Args:
+            x: X offset for polygon
+            y: Y offset for polygon
+            coords: Array/list of coordinates [x1, y1, x2, y2, ...]
+            col: Color value
+            fill: Fill flag (optional, default False)
+        """
+        # Get number of coordinate pairs
+        # Supports array.array, list, tuple, etc.
+        n_coords = len(coords)
+        if n_coords < 2:
+            return
+
+        n_poly = n_coords // 2  # Number of vertices
+        if n_poly == 0:
+            return
+
+        if not fill:
+            # Outline mode: draw lines between consecutive points
+            px1 = coords[0]
+            py1 = coords[1]
+
+            # Iterate backwards through coords (matching C implementation)
+            i = n_poly * 2 - 1
+            while i >= 0:
+                py2 = coords[i]
+                i -= 1
+                px2 = coords[i]
+                i -= 1
+
+                # Draw line from (px1, py1) to (px2, py2)
+                self.line(x + px1, y + py1, x + px2, y + py2, col)
+
+                px1 = px2
+                py1 = py2
+        else:
+            # Fill mode: scanline algorithm
+            # Find vertical extent of polygon
+            y_min = coords[1]
+            y_max = coords[1]
+            for i in range(1, n_poly):
+                py = coords[i * 2 + 1]
+                if py < y_min:
+                    y_min = py
+                if py > y_max:
+                    y_max = py
+
+            # For each scanline
+            for row in range(y_min, y_max + 1):
+                # Find edge intersections (nodes)
+                nodes = []
+
+                # Start from first vertex
+                px1 = coords[0]
+                py1 = coords[1]
+
+                # Iterate backwards through vertices
+                i = n_poly * 2 - 1
+                while i >= 0:
+                    py2 = coords[i]
+                    i -= 1
+                    px2 = coords[i]
+                    i -= 1
+
+                    # Check if edge crosses this scanline
+                    # Avoid duplicating pixels at vertices by excluding bottom pixel
+                    if py1 != py2 and ((py1 > row >= py2) or (py1 <= row < py2)):
+                        # Calculate intersection using fixed-point math
+                        # node = px1 + (px2-px1) * (row-py1) / (py2-py1)
+                        # Use fixed point with 32x scaling for precision
+                        node = (32 * px1 + 32 * (px2 - px1) * (row - py1) // (py2 - py1) + 16) // 32
+                        nodes.append(node)
+                    elif row == max(py1, py2):
+                        # Handle local minima/maxima to fill missing pixels
+                        if py1 < py2:
+                            self._setpixel_checked(x + px2, y + py2, col)
+                        elif py2 < py1:
+                            self._setpixel_checked(x + px1, y + py1, col)
+                        else:
+                            # Horizontal edge
+                            self.line(x + px1, y + py1, x + px2, y + py2, col)
+
+                    px1 = px2
+                    py1 = py2
+
+                if not nodes:
+                    continue
+
+                # Sort nodes left-to-right using bubble sort (matching C)
+                i = 0
+                while i < len(nodes) - 1:
+                    if nodes[i] > nodes[i + 1]:
+                        # Swap
+                        nodes[i], nodes[i + 1] = nodes[i + 1], nodes[i]
+                        if i > 0:
+                            i -= 1
+                    else:
+                        i += 1
+
+                # Fill between pairs of nodes
+                for i in range(0, len(nodes), 2):
+                    if i + 1 < len(nodes):
+                        self.fill_rect(x + nodes[i], y + row, nodes[i + 1] - nodes[i] + 1, 1, col)
 
 
 # ====================================================================
