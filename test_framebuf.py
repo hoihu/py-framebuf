@@ -5,16 +5,11 @@ Tests each format against the built-in C implementation
 to ensure byte-for-byte compatibility.
 """
 
-try:
-    import framebuf  # C implementation
-    import framebuf_pure  # Our implementation
-    HAS_C_FRAMEBUF = True
-except ImportError:
-    # On some platforms, built-in framebuf may not be available
-    import framebuf_pure
-    framebuf = None
-    HAS_C_FRAMEBUF = False
-    print("WARNING: Built-in framebuf not available, testing pure implementation only")
+# Import C implementation
+import framebuf as framebuf_c
+
+# Import our pure Python implementation (renamed to framebufpy to avoid conflict)
+import framebufpy as framebuf_pure
 
 
 def hex_dump(buf, width=16):
@@ -55,29 +50,26 @@ def test_mono_vlsb_pixel_set():
     w, h = 20, 32
     size = ((h + 7) // 8) * w  # 4 * 20 = 80 bytes
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(size)
-        fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.MONO_VLSB)
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.MONO_VLSB)
 
     buf_py = bytearray(size)
     fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.MONO_VLSB)
 
     # Test single pixel
-    if HAS_C_FRAMEBUF:
-        fb_c.pixel(0, 0, 1)
+    fb_c.pixel(0, 0, 1)
     fb_py.pixel(0, 0, 1)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "MONO_VLSB pixel(0, 0, 1)"):
+    if not compare_buffers(buf_c, buf_py, "MONO_VLSB pixel(0, 0, 1)"):
         return False
 
     # Test multiple pixels
     test_pixels = [(5, 5, 1), (10, 15, 1), (19, 31, 1), (0, 7, 1), (0, 8, 1)]
     for x, y, c in test_pixels:
-        if HAS_C_FRAMEBUF:
-            fb_c.pixel(x, y, c)
+        fb_c.pixel(x, y, c)
         fb_py.pixel(x, y, c)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "MONO_VLSB multiple pixels"):
+    if not compare_buffers(buf_c, buf_py, "MONO_VLSB multiple pixels"):
         return False
 
     print("✓ MONO_VLSB pixel set test passed")
@@ -89,9 +81,8 @@ def test_mono_vlsb_pixel_get():
     w, h = 20, 32
     size = ((h + 7) // 8) * w
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(size)
-        fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.MONO_VLSB)
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.MONO_VLSB)
 
     buf_py = bytearray(size)
     fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.MONO_VLSB)
@@ -99,26 +90,19 @@ def test_mono_vlsb_pixel_get():
     # Set some pixels
     test_pixels = [(5, 5, 1), (10, 15, 1), (19, 31, 1)]
     for x, y, c in test_pixels:
-        if HAS_C_FRAMEBUF:
-            fb_c.pixel(x, y, c)
+        fb_c.pixel(x, y, c)
         fb_py.pixel(x, y, c)
 
     # Read them back
     for x, y, expected in test_pixels:
-        if HAS_C_FRAMEBUF:
-            val_c = fb_c.pixel(x, y)
-            val_py = fb_py.pixel(x, y, -1)
-            if val_c != val_py:
-                print(f"❌ FAILED: pixel({x}, {y}) returned {val_py}, expected {val_c}")
-                return False
-            if val_c != expected:
-                print(f"❌ FAILED: pixel({x}, {y}) returned {val_c}, expected {expected}")
-                return False
-        else:
-            val_py = fb_py.pixel(x, y, -1)
-            if val_py != expected:
-                print(f"❌ FAILED: pixel({x}, {y}) returned {val_py}, expected {expected}")
-                return False
+        val_c = fb_c.pixel(x, y)
+        val_py = fb_py.pixel(x, y, -1)
+        if val_c != val_py:
+            print(f"❌ FAILED: pixel({x}, {y}) returned {val_py}, expected {val_c}")
+            return False
+        if val_c != expected:
+            print(f"❌ FAILED: pixel({x}, {y}) returned {val_c}, expected {expected}")
+            return False
 
     print("✓ MONO_VLSB pixel get test passed")
     return True
@@ -129,35 +113,31 @@ def test_mono_vlsb_hline():
     w, h = 20, 32
     size = ((h + 7) // 8) * w
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(size)
-        fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.MONO_VLSB)
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.MONO_VLSB)
 
     buf_py = bytearray(size)
     fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.MONO_VLSB)
 
     # Test hline across full width
-    if HAS_C_FRAMEBUF:
-        fb_c.hline(0, 5, w, 1)
+    fb_c.hline(0, 5, w, 1)
     fb_py.hline(0, 5, w, 1)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "MONO_VLSB hline(0, 5, 20, 1)"):
+    if not compare_buffers(buf_c, buf_py, "MONO_VLSB hline(0, 5, 20, 1)"):
         return False
 
     # Test hline partial
-    if HAS_C_FRAMEBUF:
-        fb_c.hline(5, 10, 10, 1)
+    fb_c.hline(5, 10, 10, 1)
     fb_py.hline(5, 10, 10, 1)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "MONO_VLSB hline(5, 10, 10, 1)"):
+    if not compare_buffers(buf_c, buf_py, "MONO_VLSB hline(5, 10, 10, 1)"):
         return False
 
     # Test hline with clear
-    if HAS_C_FRAMEBUF:
-        fb_c.hline(5, 10, 5, 0)
+    fb_c.hline(5, 10, 5, 0)
     fb_py.hline(5, 10, 5, 0)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "MONO_VLSB hline clear"):
+    if not compare_buffers(buf_c, buf_py, "MONO_VLSB hline clear"):
         return False
 
     print("✓ MONO_VLSB hline test passed")
@@ -169,35 +149,31 @@ def test_mono_vlsb_vline():
     w, h = 20, 32
     size = ((h + 7) // 8) * w
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(size)
-        fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.MONO_VLSB)
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.MONO_VLSB)
 
     buf_py = bytearray(size)
     fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.MONO_VLSB)
 
     # Test vline across full height
-    if HAS_C_FRAMEBUF:
-        fb_c.vline(5, 0, h, 1)
+    fb_c.vline(5, 0, h, 1)
     fb_py.vline(5, 0, h, 1)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "MONO_VLSB vline(5, 0, 32, 1)"):
+    if not compare_buffers(buf_c, buf_py, "MONO_VLSB vline(5, 0, 32, 1)"):
         return False
 
     # Test vline partial
-    if HAS_C_FRAMEBUF:
-        fb_c.vline(10, 5, 10, 1)
+    fb_c.vline(10, 5, 10, 1)
     fb_py.vline(10, 5, 10, 1)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "MONO_VLSB vline(10, 5, 10, 1)"):
+    if not compare_buffers(buf_c, buf_py, "MONO_VLSB vline(10, 5, 10, 1)"):
         return False
 
     # Test vline spanning byte boundaries (y=6 to y=10 crosses byte boundary at y=8)
-    if HAS_C_FRAMEBUF:
-        fb_c.vline(15, 6, 5, 1)
+    fb_c.vline(15, 6, 5, 1)
     fb_py.vline(15, 6, 5, 1)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "MONO_VLSB vline byte boundary"):
+    if not compare_buffers(buf_c, buf_py, "MONO_VLSB vline byte boundary"):
         return False
 
     print("✓ MONO_VLSB vline test passed")
@@ -210,40 +186,37 @@ def test_mono_vlsb_fill():
     size = ((h + 7) // 8) * w
 
     # Test fill with 1
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(size)
-        fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.MONO_VLSB)
-        fb_c.fill(1)
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.MONO_VLSB)
+    fb_c.fill(1)
 
     buf_py = bytearray(size)
     fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.MONO_VLSB)
     fb_py.fill(1)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "MONO_VLSB fill(1)"):
+    if not compare_buffers(buf_c, buf_py, "MONO_VLSB fill(1)"):
         return False
 
     # Test fill with 0
-    if HAS_C_FRAMEBUF:
-        fb_c.fill(0)
+    fb_c.fill(0)
     fb_py.fill(0)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "MONO_VLSB fill(0)"):
+    if not compare_buffers(buf_c, buf_py, "MONO_VLSB fill(0)"):
         return False
 
     # Test with non-multiple-of-8 height
     h2 = 25  # Not a multiple of 8
     size2 = ((h2 + 7) // 8) * w
 
-    if HAS_C_FRAMEBUF:
-        buf_c2 = bytearray(size2)
-        fb_c2 = framebuf.FrameBuffer(buf_c2, w, h2, framebuf.MONO_VLSB)
-        fb_c2.fill(1)
+    buf_c2 = bytearray(size2)
+    fb_c2 = framebuf_c.FrameBuffer(buf_c2, w, h2, framebuf_c.MONO_VLSB)
+    fb_c2.fill(1)
 
     buf_py2 = bytearray(size2)
     fb_py2 = framebuf_pure.FrameBuffer(buf_py2, w, h2, framebuf_pure.MONO_VLSB)
     fb_py2.fill(1)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c2, buf_py2, "MONO_VLSB fill partial height"):
+    if not compare_buffers(buf_c2, buf_py2, "MONO_VLSB fill partial height"):
         return False
 
     print("✓ MONO_VLSB fill test passed")
@@ -255,48 +228,44 @@ def test_mono_vlsb_edge_cases():
     w, h = 20, 32
     size = ((h + 7) // 8) * w
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(size)
-        fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.MONO_VLSB)
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.MONO_VLSB)
 
     buf_py = bytearray(size)
     fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.MONO_VLSB)
 
     # Test clipping - pixel outside bounds
-    if HAS_C_FRAMEBUF:
-        fb_c.pixel(-1, 5, 1)
-        fb_c.pixel(25, 5, 1)
-        fb_c.pixel(5, -1, 1)
-        fb_c.pixel(5, 35, 1)
+    fb_c.pixel(-1, 5, 1)
+    fb_c.pixel(25, 5, 1)
+    fb_c.pixel(5, -1, 1)
+    fb_c.pixel(5, 35, 1)
 
     fb_py.pixel(-1, 5, 1)
     fb_py.pixel(25, 5, 1)
     fb_py.pixel(5, -1, 1)
     fb_py.pixel(5, 35, 1)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "MONO_VLSB pixel clipping"):
+    if not compare_buffers(buf_c, buf_py, "MONO_VLSB pixel clipping"):
         return False
 
     # Test hline clipping
-    if HAS_C_FRAMEBUF:
-        fb_c.hline(-5, 10, 10, 1)  # Starts before buffer, should clip
-        fb_c.hline(15, 10, 10, 1)  # Extends past buffer, should clip
+    fb_c.hline(-5, 10, 10, 1)  # Starts before buffer, should clip
+    fb_c.hline(15, 10, 10, 1)  # Extends past buffer, should clip
 
     fb_py.hline(-5, 10, 10, 1)
     fb_py.hline(15, 10, 10, 1)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "MONO_VLSB hline clipping"):
+    if not compare_buffers(buf_c, buf_py, "MONO_VLSB hline clipping"):
         return False
 
     # Test vline clipping
-    if HAS_C_FRAMEBUF:
-        fb_c.vline(10, -5, 10, 1)  # Starts before buffer, should clip
-        fb_c.vline(10, 25, 10, 1)  # Extends past buffer, should clip
+    fb_c.vline(10, -5, 10, 1)  # Starts before buffer, should clip
+    fb_c.vline(10, 25, 10, 1)  # Extends past buffer, should clip
 
     fb_py.vline(10, -5, 10, 1)
     fb_py.vline(10, 25, 10, 1)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "MONO_VLSB vline clipping"):
+    if not compare_buffers(buf_c, buf_py, "MONO_VLSB vline clipping"):
         return False
 
     print("✓ MONO_VLSB edge cases test passed")
@@ -308,53 +277,48 @@ def test_mono_vlsb_realistic_size():
     w, h = 128, 64
     size = ((h + 7) // 8) * w  # 8 * 128 = 1024 bytes
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(size)
-        fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.MONO_VLSB)
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.MONO_VLSB)
 
     buf_py = bytearray(size)
     fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.MONO_VLSB)
 
     # Test fill
-    if HAS_C_FRAMEBUF:
-        fb_c.fill(1)
+    fb_c.fill(1)
     fb_py.fill(1)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "128x64 fill"):
+    if not compare_buffers(buf_c, buf_py, "128x64 fill"):
         return False
 
     # Test horizontal line across full width
-    if HAS_C_FRAMEBUF:
-        fb_c.fill(0)
-        fb_c.hline(0, 32, w, 1)
+    fb_c.fill(0)
+    fb_c.hline(0, 32, w, 1)
     fb_py.fill(0)
     fb_py.hline(0, 32, w, 1)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "128x64 hline"):
+    if not compare_buffers(buf_c, buf_py, "128x64 hline"):
         return False
 
     # Test vertical line down full height
-    if HAS_C_FRAMEBUF:
-        fb_c.fill(0)
-        fb_c.vline(64, 0, h, 1)
+    fb_c.fill(0)
+    fb_c.vline(64, 0, h, 1)
     fb_py.fill(0)
     fb_py.vline(64, 0, h, 1)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "128x64 vline"):
+    if not compare_buffers(buf_c, buf_py, "128x64 vline"):
         return False
 
     # Test some pixels
-    if HAS_C_FRAMEBUF:
-        fb_c.fill(0)
-        fb_c.pixel(0, 0, 1)
-        fb_c.pixel(127, 63, 1)
-        fb_c.pixel(64, 32, 1)
+    fb_c.fill(0)
+    fb_c.pixel(0, 0, 1)
+    fb_c.pixel(127, 63, 1)
+    fb_c.pixel(64, 32, 1)
     fb_py.fill(0)
     fb_py.pixel(0, 0, 1)
     fb_py.pixel(127, 63, 1)
     fb_py.pixel(64, 32, 1)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "128x64 pixels"):
+    if not compare_buffers(buf_c, buf_py, "128x64 pixels"):
         return False
 
     print("✓ MONO_VLSB 128x64 realistic size test passed")
@@ -370,9 +334,8 @@ def test_rgb565_pixel():
     w, h = 10, 10
     size = w * h * 2  # 2 bytes per pixel
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(size)
-        fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.RGB565)
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.RGB565)
 
     buf_py = bytearray(size)
     fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.RGB565)
@@ -389,27 +352,23 @@ def test_rgb565_pixel():
 
     for i, color in enumerate(colors):
         x, y = i % w, i // w
-        if HAS_C_FRAMEBUF:
-            fb_c.pixel(x, y, color)
+        fb_c.pixel(x, y, color)
         fb_py.pixel(x, y, color)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "RGB565 pixel set"):
+    if not compare_buffers(buf_c, buf_py, "RGB565 pixel set"):
         return False
 
     # Test pixel get
     for i, color in enumerate(colors):
         x, y = i % w, i // w
-        if HAS_C_FRAMEBUF:
-            val_c = fb_c.pixel(x, y)
-            val_py = fb_py.pixel(x, y, -1)
-            if val_c != val_py or val_c != color:
-                print(f"❌ FAILED: RGB565 pixel({x}, {y}) get mismatch")
-                return False
-        else:
-            val_py = fb_py.pixel(x, y, -1)
-            if val_py != color:
-                print(f"❌ FAILED: RGB565 pixel({x}, {y}) returned {val_py:04x}, expected {color:04x}")
-                return False
+        val_c = fb_c.pixel(x, y)
+        val_py = fb_py.pixel(x, y, -1)
+        if val_c != val_py or val_c != color:
+            print(f"❌ FAILED: RGB565 pixel({x}, {y}) get mismatch")
+            return False
+        if val_c != color:
+            print(f"❌ FAILED: RGB565 pixel({x}, {y}) returned {val_py:04x}, expected {color:04x}")
+            return False
 
     print("✓ RGB565 pixel test passed")
     return True
@@ -420,19 +379,17 @@ def test_rgb565_hline():
     w, h = 20, 10
     size = w * h * 2
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(size)
-        fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.RGB565)
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.RGB565)
 
     buf_py = bytearray(size)
     fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.RGB565)
 
     # Test hline with red color
-    if HAS_C_FRAMEBUF:
-        fb_c.hline(0, 5, w, 0xF800)
+    fb_c.hline(0, 5, w, 0xF800)
     fb_py.hline(0, 5, w, 0xF800)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "RGB565 hline"):
+    if not compare_buffers(buf_c, buf_py, "RGB565 hline"):
         return False
 
     print("✓ RGB565 hline test passed")
@@ -444,19 +401,17 @@ def test_rgb565_vline():
     w, h = 20, 10
     size = w * h * 2
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(size)
-        fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.RGB565)
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.RGB565)
 
     buf_py = bytearray(size)
     fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.RGB565)
 
     # Test vline with green color
-    if HAS_C_FRAMEBUF:
-        fb_c.vline(5, 0, h, 0x07E0)
+    fb_c.vline(5, 0, h, 0x07E0)
     fb_py.vline(5, 0, h, 0x07E0)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "RGB565 vline"):
+    if not compare_buffers(buf_c, buf_py, "RGB565 vline"):
         return False
 
     print("✓ RGB565 vline test passed")
@@ -468,16 +423,15 @@ def test_rgb565_fill():
     w, h = 10, 10
     size = w * h * 2
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(size)
-        fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.RGB565)
-        fb_c.fill(0x001F)  # Blue
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.RGB565)
+    fb_c.fill(0x001F)  # Blue
 
     buf_py = bytearray(size)
     fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.RGB565)
     fb_py.fill(0x001F)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "RGB565 fill"):
+    if not compare_buffers(buf_c, buf_py, "RGB565 fill"):
         return False
 
     print("✓ RGB565 fill test passed")
@@ -493,9 +447,8 @@ def test_gs8_pixel():
     w, h = 10, 10
     size = w * h
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(size)
-        fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.GS8)
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.GS8)
 
     buf_py = bytearray(size)
     fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.GS8)
@@ -505,27 +458,23 @@ def test_gs8_pixel():
 
     for i, gray in enumerate(grays):
         x, y = i % w, i // w
-        if HAS_C_FRAMEBUF:
-            fb_c.pixel(x, y, gray)
+        fb_c.pixel(x, y, gray)
         fb_py.pixel(x, y, gray)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "GS8 pixel set"):
+    if not compare_buffers(buf_c, buf_py, "GS8 pixel set"):
         return False
 
     # Test pixel get
     for i, gray in enumerate(grays):
         x, y = i % w, i // w
-        if HAS_C_FRAMEBUF:
-            val_c = fb_c.pixel(x, y)
-            val_py = fb_py.pixel(x, y, -1)
-            if val_c != val_py or val_c != gray:
-                print(f"❌ FAILED: GS8 pixel({x}, {y}) get mismatch")
-                return False
-        else:
-            val_py = fb_py.pixel(x, y, -1)
-            if val_py != gray:
-                print(f"❌ FAILED: GS8 pixel({x}, {y}) returned {val_py}, expected {gray}")
-                return False
+        val_c = fb_c.pixel(x, y)
+        val_py = fb_py.pixel(x, y, -1)
+        if val_c != val_py or val_c != gray:
+            print(f"❌ FAILED: GS8 pixel({x}, {y}) get mismatch")
+            return False
+        if val_c != gray:
+            print(f"❌ FAILED: GS8 pixel({x}, {y}) returned {val_py}, expected {gray}")
+            return False
 
     print("✓ GS8 pixel test passed")
     return True
@@ -536,18 +485,16 @@ def test_gs8_hline():
     w, h = 20, 10
     size = w * h
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(size)
-        fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.GS8)
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.GS8)
 
     buf_py = bytearray(size)
     fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.GS8)
 
-    if HAS_C_FRAMEBUF:
-        fb_c.hline(0, 5, w, 128)
+    fb_c.hline(0, 5, w, 128)
     fb_py.hline(0, 5, w, 128)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "GS8 hline"):
+    if not compare_buffers(buf_c, buf_py, "GS8 hline"):
         return False
 
     print("✓ GS8 hline test passed")
@@ -559,18 +506,16 @@ def test_gs8_vline():
     w, h = 20, 10
     size = w * h
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(size)
-        fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.GS8)
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.GS8)
 
     buf_py = bytearray(size)
     fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.GS8)
 
-    if HAS_C_FRAMEBUF:
-        fb_c.vline(5, 0, h, 192)
+    fb_c.vline(5, 0, h, 192)
     fb_py.vline(5, 0, h, 192)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "GS8 vline"):
+    if not compare_buffers(buf_c, buf_py, "GS8 vline"):
         return False
 
     print("✓ GS8 vline test passed")
@@ -582,16 +527,15 @@ def test_gs8_fill():
     w, h = 10, 10
     size = w * h
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(size)
-        fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.GS8)
-        fb_c.fill(200)
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.GS8)
+    fb_c.fill(200)
 
     buf_py = bytearray(size)
     fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.GS8)
     fb_py.fill(200)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "GS8 fill"):
+    if not compare_buffers(buf_c, buf_py, "GS8 fill"):
         return False
 
     print("✓ GS8 fill test passed")
@@ -607,9 +551,8 @@ def test_mono_hlsb_pixel():
     w, h = 16, 10  # 16 = 2 bytes wide
     size = ((w + 7) // 8) * h  # 2 * 10 = 20 bytes
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(size)
-        fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.MONO_HLSB)
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.MONO_HLSB)
 
     buf_py = bytearray(size)
     fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.MONO_HLSB)
@@ -617,11 +560,10 @@ def test_mono_hlsb_pixel():
     # Test pixels across byte boundary
     test_pixels = [(0, 0, 1), (7, 0, 1), (8, 0, 1), (15, 0, 1), (5, 5, 1)]
     for x, y, c in test_pixels:
-        if HAS_C_FRAMEBUF:
-            fb_c.pixel(x, y, c)
+        fb_c.pixel(x, y, c)
         fb_py.pixel(x, y, c)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "MONO_HLSB pixel set"):
+    if not compare_buffers(buf_c, buf_py, "MONO_HLSB pixel set"):
         return False
 
     print("✓ MONO_HLSB pixel test passed")
@@ -633,35 +575,31 @@ def test_mono_hlsb_hline():
     w, h = 24, 10  # 24 = 3 bytes wide
     size = ((w + 7) // 8) * h
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(size)
-        fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.MONO_HLSB)
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.MONO_HLSB)
 
     buf_py = bytearray(size)
     fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.MONO_HLSB)
 
     # Test hline within single byte
-    if HAS_C_FRAMEBUF:
-        fb_c.hline(1, 0, 3, 1)
+    fb_c.hline(1, 0, 3, 1)
     fb_py.hline(1, 0, 3, 1)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "MONO_HLSB hline single byte"):
+    if not compare_buffers(buf_c, buf_py, "MONO_HLSB hline single byte"):
         return False
 
     # Test hline spanning two bytes
-    if HAS_C_FRAMEBUF:
-        fb_c.hline(5, 1, 6, 1)  # Crosses byte boundary at x=8
+    fb_c.hline(5, 1, 6, 1)  # Crosses byte boundary at x=8
     fb_py.hline(5, 1, 6, 1)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "MONO_HLSB hline two bytes"):
+    if not compare_buffers(buf_c, buf_py, "MONO_HLSB hline two bytes"):
         return False
 
     # Test hline spanning three bytes
-    if HAS_C_FRAMEBUF:
-        fb_c.hline(6, 2, 12, 1)  # Crosses two byte boundaries
+    fb_c.hline(6, 2, 12, 1)  # Crosses two byte boundaries
     fb_py.hline(6, 2, 12, 1)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "MONO_HLSB hline three bytes"):
+    if not compare_buffers(buf_c, buf_py, "MONO_HLSB hline three bytes"):
         return False
 
     print("✓ MONO_HLSB hline test passed")
@@ -673,18 +611,16 @@ def test_mono_hlsb_vline():
     w, h = 16, 20
     size = ((w + 7) // 8) * h
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(size)
-        fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.MONO_HLSB)
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.MONO_HLSB)
 
     buf_py = bytearray(size)
     fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.MONO_HLSB)
 
-    if HAS_C_FRAMEBUF:
-        fb_c.vline(5, 0, h, 1)
+    fb_c.vline(5, 0, h, 1)
     fb_py.vline(5, 0, h, 1)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "MONO_HLSB vline"):
+    if not compare_buffers(buf_c, buf_py, "MONO_HLSB vline"):
         return False
 
     print("✓ MONO_HLSB vline test passed")
@@ -696,16 +632,15 @@ def test_mono_hlsb_fill():
     w, h = 13, 10  # Non-multiple of 8 to test partial byte handling
     size = ((w + 7) // 8) * h
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(size)
-        fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.MONO_HLSB)
-        fb_c.fill(1)
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.MONO_HLSB)
+    fb_c.fill(1)
 
     buf_py = bytearray(size)
     fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.MONO_HLSB)
     fb_py.fill(1)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "MONO_HLSB fill(1)"):
+    if not compare_buffers(buf_c, buf_py, "MONO_HLSB fill(1)"):
         return False
 
     print("✓ MONO_HLSB fill test passed")
@@ -721,9 +656,8 @@ def test_mono_hmsb_pixel():
     w, h = 16, 10
     size = ((w + 7) // 8) * h
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(size)
-        fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.MONO_HMSB)
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.MONO_HMSB)
 
     buf_py = bytearray(size)
     fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.MONO_HMSB)
@@ -731,11 +665,10 @@ def test_mono_hmsb_pixel():
     # Test pixels across byte boundary
     test_pixels = [(0, 0, 1), (7, 0, 1), (8, 0, 1), (15, 0, 1), (5, 5, 1)]
     for x, y, c in test_pixels:
-        if HAS_C_FRAMEBUF:
-            fb_c.pixel(x, y, c)
+        fb_c.pixel(x, y, c)
         fb_py.pixel(x, y, c)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "MONO_HMSB pixel set"):
+    if not compare_buffers(buf_c, buf_py, "MONO_HMSB pixel set"):
         return False
 
     print("✓ MONO_HMSB pixel test passed")
@@ -747,35 +680,31 @@ def test_mono_hmsb_hline():
     w, h = 24, 10
     size = ((w + 7) // 8) * h
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(size)
-        fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.MONO_HMSB)
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.MONO_HMSB)
 
     buf_py = bytearray(size)
     fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.MONO_HMSB)
 
     # Test hline within single byte
-    if HAS_C_FRAMEBUF:
-        fb_c.hline(1, 0, 3, 1)
+    fb_c.hline(1, 0, 3, 1)
     fb_py.hline(1, 0, 3, 1)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "MONO_HMSB hline single byte"):
+    if not compare_buffers(buf_c, buf_py, "MONO_HMSB hline single byte"):
         return False
 
     # Test hline spanning two bytes
-    if HAS_C_FRAMEBUF:
-        fb_c.hline(5, 1, 6, 1)
+    fb_c.hline(5, 1, 6, 1)
     fb_py.hline(5, 1, 6, 1)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "MONO_HMSB hline two bytes"):
+    if not compare_buffers(buf_c, buf_py, "MONO_HMSB hline two bytes"):
         return False
 
     # Test hline spanning three bytes
-    if HAS_C_FRAMEBUF:
-        fb_c.hline(6, 2, 12, 1)
+    fb_c.hline(6, 2, 12, 1)
     fb_py.hline(6, 2, 12, 1)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "MONO_HMSB hline three bytes"):
+    if not compare_buffers(buf_c, buf_py, "MONO_HMSB hline three bytes"):
         return False
 
     print("✓ MONO_HMSB hline test passed")
@@ -787,18 +716,16 @@ def test_mono_hmsb_vline():
     w, h = 16, 20
     size = ((w + 7) // 8) * h
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(size)
-        fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.MONO_HMSB)
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.MONO_HMSB)
 
     buf_py = bytearray(size)
     fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.MONO_HMSB)
 
-    if HAS_C_FRAMEBUF:
-        fb_c.vline(5, 0, h, 1)
+    fb_c.vline(5, 0, h, 1)
     fb_py.vline(5, 0, h, 1)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "MONO_HMSB vline"):
+    if not compare_buffers(buf_c, buf_py, "MONO_HMSB vline"):
         return False
 
     print("✓ MONO_HMSB vline test passed")
@@ -810,16 +737,15 @@ def test_mono_hmsb_fill():
     w, h = 13, 10  # Non-multiple of 8
     size = ((w + 7) // 8) * h
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(size)
-        fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.MONO_HMSB)
-        fb_c.fill(1)
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.MONO_HMSB)
+    fb_c.fill(1)
 
     buf_py = bytearray(size)
     fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.MONO_HMSB)
     fb_py.fill(1)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "MONO_HMSB fill(1)"):
+    if not compare_buffers(buf_c, buf_py, "MONO_HMSB fill(1)"):
         return False
 
     print("✓ MONO_HMSB fill test passed")
@@ -835,9 +761,8 @@ def test_gs4_hmsb_pixel():
     w, h = 10, 10
     size = ((w + 1) // 2) * h  # 5 * 10 = 50 bytes
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(size)
-        fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.GS4_HMSB)
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.GS4_HMSB)
 
     buf_py = bytearray(size)
     fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.GS4_HMSB)
@@ -846,27 +771,23 @@ def test_gs4_hmsb_pixel():
     values = [0, 3, 7, 10, 15]
     for i, val in enumerate(values):
         x, y = i % w, i // w
-        if HAS_C_FRAMEBUF:
-            fb_c.pixel(x, y, val)
+        fb_c.pixel(x, y, val)
         fb_py.pixel(x, y, val)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "GS4_HMSB pixel set"):
+    if not compare_buffers(buf_c, buf_py, "GS4_HMSB pixel set"):
         return False
 
     # Test pixel get
     for i, val in enumerate(values):
         x, y = i % w, i // w
-        if HAS_C_FRAMEBUF:
-            val_c = fb_c.pixel(x, y)
-            val_py = fb_py.pixel(x, y, -1)
-            if val_c != val_py or val_c != val:
-                print(f"❌ FAILED: GS4_HMSB pixel({x}, {y}) get mismatch")
-                return False
-        else:
-            val_py = fb_py.pixel(x, y, -1)
-            if val_py != val:
-                print(f"❌ FAILED: GS4_HMSB pixel({x}, {y}) returned {val_py}, expected {val}")
-                return False
+        val_c = fb_c.pixel(x, y)
+        val_py = fb_py.pixel(x, y, -1)
+        if val_c != val_py or val_c != val:
+            print(f"❌ FAILED: GS4_HMSB pixel({x}, {y}) get mismatch")
+            return False
+        if val_c != val:
+            print(f"❌ FAILED: GS4_HMSB pixel({x}, {y}) returned {val_py}, expected {val}")
+            return False
 
     print("✓ GS4_HMSB pixel test passed")
     return True
@@ -877,27 +798,24 @@ def test_gs4_hmsb_hline():
     w, h = 20, 10
     size = ((w + 1) // 2) * h
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(size)
-        fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.GS4_HMSB)
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.GS4_HMSB)
 
     buf_py = bytearray(size)
     fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.GS4_HMSB)
 
     # Test hline with even and odd alignments
-    if HAS_C_FRAMEBUF:
-        fb_c.hline(0, 5, w, 8)  # Even start
+    fb_c.hline(0, 5, w, 8)  # Even start
     fb_py.hline(0, 5, w, 8)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "GS4_HMSB hline even"):
+    if not compare_buffers(buf_c, buf_py, "GS4_HMSB hline even"):
         return False
 
     # Odd start, odd width
-    if HAS_C_FRAMEBUF:
-        fb_c.hline(1, 3, 7, 12)
+    fb_c.hline(1, 3, 7, 12)
     fb_py.hline(1, 3, 7, 12)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "GS4_HMSB hline odd"):
+    if not compare_buffers(buf_c, buf_py, "GS4_HMSB hline odd"):
         return False
 
     print("✓ GS4_HMSB hline test passed")
@@ -909,18 +827,16 @@ def test_gs4_hmsb_vline():
     w, h = 20, 10
     size = ((w + 1) // 2) * h
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(size)
-        fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.GS4_HMSB)
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.GS4_HMSB)
 
     buf_py = bytearray(size)
     fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.GS4_HMSB)
 
-    if HAS_C_FRAMEBUF:
-        fb_c.vline(5, 0, h, 9)
+    fb_c.vline(5, 0, h, 9)
     fb_py.vline(5, 0, h, 9)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "GS4_HMSB vline"):
+    if not compare_buffers(buf_c, buf_py, "GS4_HMSB vline"):
         return False
 
     print("✓ GS4_HMSB vline test passed")
@@ -932,16 +848,15 @@ def test_gs4_hmsb_fill():
     w, h = 10, 10
     size = ((w + 1) // 2) * h
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(size)
-        fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.GS4_HMSB)
-        fb_c.fill(11)
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.GS4_HMSB)
+    fb_c.fill(11)
 
     buf_py = bytearray(size)
     fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.GS4_HMSB)
     fb_py.fill(11)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "GS4_HMSB fill"):
+    if not compare_buffers(buf_c, buf_py, "GS4_HMSB fill"):
         return False
 
     print("✓ GS4_HMSB fill test passed")
@@ -957,9 +872,8 @@ def test_gs2_hmsb_pixel():
     w, h = 12, 8
     size = ((w + 3) // 4) * h  # 3 * 8 = 24 bytes
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(size)
-        fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.GS2_HMSB)
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.GS2_HMSB)
 
     buf_py = bytearray(size)
     fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.GS2_HMSB)
@@ -968,27 +882,23 @@ def test_gs2_hmsb_pixel():
     values = [0, 1, 2, 3]
     for i, val in enumerate(values):
         x, y = i % w, i // w
-        if HAS_C_FRAMEBUF:
-            fb_c.pixel(x, y, val)
+        fb_c.pixel(x, y, val)
         fb_py.pixel(x, y, val)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "GS2_HMSB pixel set"):
+    if not compare_buffers(buf_c, buf_py, "GS2_HMSB pixel set"):
         return False
 
     # Test pixel get
     for i, val in enumerate(values):
         x, y = i % w, i // w
-        if HAS_C_FRAMEBUF:
-            val_c = fb_c.pixel(x, y)
-            val_py = fb_py.pixel(x, y, -1)
-            if val_c != val_py or val_c != val:
-                print(f"❌ FAILED: GS2_HMSB pixel({x}, {y}) get mismatch")
-                return False
-        else:
-            val_py = fb_py.pixel(x, y, -1)
-            if val_py != val:
-                print(f"❌ FAILED: GS2_HMSB pixel({x}, {y}) returned {val_py}, expected {val}")
-                return False
+        val_c = fb_c.pixel(x, y)
+        val_py = fb_py.pixel(x, y, -1)
+        if val_c != val_py or val_c != val:
+            print(f"❌ FAILED: GS2_HMSB pixel({x}, {y}) get mismatch")
+            return False
+        if val_c != val:
+            print(f"❌ FAILED: GS2_HMSB pixel({x}, {y}) returned {val_py}, expected {val}")
+            return False
 
     print("✓ GS2_HMSB pixel test passed")
     return True
@@ -999,18 +909,16 @@ def test_gs2_hmsb_hline():
     w, h = 16, 8
     size = ((w + 3) // 4) * h
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(size)
-        fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.GS2_HMSB)
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.GS2_HMSB)
 
     buf_py = bytearray(size)
     fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.GS2_HMSB)
 
-    if HAS_C_FRAMEBUF:
-        fb_c.hline(0, 4, w, 2)
+    fb_c.hline(0, 4, w, 2)
     fb_py.hline(0, 4, w, 2)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "GS2_HMSB hline"):
+    if not compare_buffers(buf_c, buf_py, "GS2_HMSB hline"):
         return False
 
     print("✓ GS2_HMSB hline test passed")
@@ -1022,18 +930,16 @@ def test_gs2_hmsb_vline():
     w, h = 16, 8
     size = ((w + 3) // 4) * h
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(size)
-        fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.GS2_HMSB)
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.GS2_HMSB)
 
     buf_py = bytearray(size)
     fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.GS2_HMSB)
 
-    if HAS_C_FRAMEBUF:
-        fb_c.vline(7, 0, h, 3)
+    fb_c.vline(7, 0, h, 3)
     fb_py.vline(7, 0, h, 3)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "GS2_HMSB vline"):
+    if not compare_buffers(buf_c, buf_py, "GS2_HMSB vline"):
         return False
 
     print("✓ GS2_HMSB vline test passed")
@@ -1045,16 +951,15 @@ def test_gs2_hmsb_fill():
     w, h = 12, 8
     size = ((w + 3) // 4) * h
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(size)
-        fb_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.GS2_HMSB)
-        fb_c.fill(2)
+    buf_c = bytearray(size)
+    fb_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.GS2_HMSB)
+    fb_c.fill(2)
 
     buf_py = bytearray(size)
     fb_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.GS2_HMSB)
     fb_py.fill(2)
 
-    if HAS_C_FRAMEBUF and not compare_buffers(buf_c, buf_py, "GS2_HMSB fill"):
+    if not compare_buffers(buf_c, buf_py, "GS2_HMSB fill"):
         return False
 
     print("✓ GS2_HMSB fill test passed")
@@ -1327,11 +1232,10 @@ def test_blit_gs8_basic():
     fbuf2_py = framebuf_pure.FrameBuffer(bytearray(4), 2, 2, framebuf_pure.GS8)
     fbuf2_py.fill(0xFF)
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(w * h)
-        fbuf_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.GS8)
-        fbuf2_c = framebuf.FrameBuffer(bytearray(4), 2, 2, framebuf.GS8)
-        fbuf2_c.fill(0xFF)
+    buf_c = bytearray(w * h)
+    fbuf_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.GS8)
+    fbuf2_c = framebuf_c.FrameBuffer(bytearray(4), 2, 2, framebuf_c.GS8)
+    fbuf2_c.fill(0xFF)
 
     # Test blit at various positions
     test_positions = [(-1, -1), (0, 0), (1, 1), (4, 3)]
@@ -1340,11 +1244,10 @@ def test_blit_gs8_basic():
         fbuf_py.fill(0)
         fbuf_py.blit(fbuf2_py, x, y)
 
-        if HAS_C_FRAMEBUF:
-            fbuf_c.fill(0)
-            fbuf_c.blit(fbuf2_c, x, y)
-            if not compare_buffers(buf_c, buf_py, f"blit GS8 at ({x}, {y})"):
-                return False
+        fbuf_c.fill(0)
+        fbuf_c.blit(fbuf2_c, x, y)
+        if not compare_buffers(buf_c, buf_py, f"blit GS8 at ({x}, {y})"):
+            return False
 
     return True
 
@@ -1355,21 +1258,19 @@ def test_blit_tuple_source():
     buf_py = bytearray(w * h)
     fbuf_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.GS8)
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(w * h)
-        fbuf_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.GS8)
+    buf_c = bytearray(w * h)
+    fbuf_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.GS8)
 
     # Blit a bytes object
     fbuf_py.fill(0)
     image = (b"\x10\x11\x12\x13", 2, 2, framebuf_pure.GS8)
     fbuf_py.blit(image, 1, 1)
 
-    if HAS_C_FRAMEBUF:
-        fbuf_c.fill(0)
-        image_c = (b"\x10\x11\x12\x13", 2, 2, framebuf.GS8)
-        fbuf_c.blit(image_c, 1, 1)
-        if not compare_buffers(buf_c, buf_py, "blit from tuple"):
-            return False
+    fbuf_c.fill(0)
+    image_c = (b"\x10\x11\x12\x13", 2, 2, framebuf_c.GS8)
+    fbuf_c.blit(image_c, 1, 1)
+    if not compare_buffers(buf_c, buf_py, "blit from tuple"):
+        return False
 
     return True
 
@@ -1380,21 +1281,19 @@ def test_blit_tuple_with_stride():
     buf_py = bytearray(w * h)
     fbuf_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.GS8)
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(w * h)
-        fbuf_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.GS8)
+    buf_c = bytearray(w * h)
+    fbuf_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.GS8)
 
     # Blit a bytes object with stride (2x2 image with stride=3)
     fbuf_py.fill(0)
     image = (b"\x20\x21\xff\x22\x23\xff", 2, 2, framebuf_pure.GS8, 3)
     fbuf_py.blit(image, 1, 1)
 
-    if HAS_C_FRAMEBUF:
-        fbuf_c.fill(0)
-        image_c = (b"\x20\x21\xff\x22\x23\xff", 2, 2, framebuf.GS8, 3)
-        fbuf_c.blit(image_c, 1, 1)
-        if not compare_buffers(buf_c, buf_py, "blit with stride"):
-            return False
+    fbuf_c.fill(0)
+    image_c = (b"\x20\x21\xff\x22\x23\xff", 2, 2, framebuf_c.GS8, 3)
+    fbuf_c.blit(image_c, 1, 1)
+    if not compare_buffers(buf_c, buf_py, "blit with stride"):
+        return False
 
     return True
 
@@ -1405,9 +1304,8 @@ def test_blit_with_palette():
     buf_py = bytearray(w * h)
     fbuf_py = framebuf_pure.FrameBuffer(buf_py, w, h, framebuf_pure.GS8)
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(w * h)
-        fbuf_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.GS8)
+    buf_c = bytearray(w * h)
+    fbuf_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.GS8)
 
     # Blit with palette
     fbuf_py.fill(0)
@@ -1415,13 +1313,12 @@ def test_blit_with_palette():
     palette = (b"\xa1\xa2", 2, 1, framebuf_pure.GS8)
     fbuf_py.blit(image, 1, 1, -1, palette)
 
-    if HAS_C_FRAMEBUF:
-        fbuf_c.fill(0)
-        image_c = (b"\x00\x01\x01\x00", 2, 2, framebuf.GS8)
-        palette_c = (b"\xa1\xa2", 2, 1, framebuf.GS8)
-        fbuf_c.blit(image_c, 1, 1, -1, palette_c)
-        if not compare_buffers(buf_c, buf_py, "blit with palette"):
-            return False
+    fbuf_c.fill(0)
+    image_c = (b"\x00\x01\x01\x00", 2, 2, framebuf_c.GS8)
+    palette_c = (b"\xa1\xa2", 2, 1, framebuf_c.GS8)
+    fbuf_c.blit(image_c, 1, 1, -1, palette_c)
+    if not compare_buffers(buf_c, buf_py, "blit with palette"):
+        return False
 
     return True
 
@@ -1469,26 +1366,25 @@ def test_blit_cross_format_palette():
         print(f"❌ Expected pixel(8,8)=0000, got {dest_py.pixel(8, 8, -1):04x}")
         return False
 
-    if HAS_C_FRAMEBUF:
-        # Compare with C implementation
-        src_buf_c = bytearray(w * h // 8)
-        src_c = framebuf.FrameBuffer(src_buf_c, w, h, framebuf.MONO_HLSB)
-        src_c.pixel(0, 0, 1)
-        src_c.pixel(7, 7, 1)
-        src_c.pixel(3, 3, 1)
+    # Compare with C implementation
+    src_buf_c = bytearray(w * h // 8)
+    src_c = framebuf_c.FrameBuffer(src_buf_c, w, h, framebuf_c.MONO_HLSB)
+    src_c.pixel(0, 0, 1)
+    src_c.pixel(7, 7, 1)
+    src_c.pixel(3, 3, 1)
 
-        dest_buf_c = bytearray(wd * hd * 2)
-        dest_c = framebuf.FrameBuffer(dest_buf_c, wd, hd, framebuf.RGB565)
+    dest_buf_c = bytearray(wd * hd * 2)
+    dest_c = framebuf_c.FrameBuffer(dest_buf_c, wd, hd, framebuf_c.RGB565)
 
-        pal_buf_c = bytearray(2 * 2)
-        palette_c = framebuf.FrameBuffer(pal_buf_c, 2, 1, framebuf.RGB565)
-        palette_c.pixel(0, 0, bg)
-        palette_c.pixel(1, 0, fg)
+    pal_buf_c = bytearray(2 * 2)
+    palette_c = framebuf_c.FrameBuffer(pal_buf_c, 2, 1, framebuf_c.RGB565)
+    palette_c.pixel(0, 0, bg)
+    palette_c.pixel(1, 0, fg)
 
-        dest_c.blit(src_c, 0, 0, -1, palette_c)
+    dest_c.blit(src_c, 0, 0, -1, palette_c)
 
-        if not compare_buffers(dest_buf_c, dest_buf_py, "cross-format blit with palette"):
-            return False
+    if not compare_buffers(dest_buf_c, dest_buf_py, "cross-format blit with palette"):
+        return False
 
     return True
 
@@ -1549,27 +1445,26 @@ def test_blit_mono_hmsb_to_rgb565():
         print(f"❌ Expected pixel(8,8)=0000, got {dest_py.pixel(8, 8, -1):04x}")
         return False
 
-    if HAS_C_FRAMEBUF:
-        # Compare with C implementation
-        src_buf_c = bytearray(w * h // 8)
-        src_c = framebuf.FrameBuffer(src_buf_c, w, h, framebuf.MONO_HMSB)
-        src_c.pixel(0, 0, 1)
-        src_c.pixel(1, 1, 1)
-        src_c.pixel(2, 2, 1)
-        src_c.pixel(7, 7, 1)
+    # Compare with C implementation
+    src_buf_c = bytearray(w * h // 8)
+    src_c = framebuf_c.FrameBuffer(src_buf_c, w, h, framebuf_c.MONO_HMSB)
+    src_c.pixel(0, 0, 1)
+    src_c.pixel(1, 1, 1)
+    src_c.pixel(2, 2, 1)
+    src_c.pixel(7, 7, 1)
 
-        dest_buf_c = bytearray(wd * hd * 2)
-        dest_c = framebuf.FrameBuffer(dest_buf_c, wd, hd, framebuf.RGB565)
+    dest_buf_c = bytearray(wd * hd * 2)
+    dest_c = framebuf_c.FrameBuffer(dest_buf_c, wd, hd, framebuf_c.RGB565)
 
-        pal_buf_c = bytearray(2 * 2)
-        palette_c = framebuf.FrameBuffer(pal_buf_c, 2, 1, framebuf.RGB565)
-        palette_c.pixel(0, 0, bg)
-        palette_c.pixel(1, 0, fg)
+    pal_buf_c = bytearray(2 * 2)
+    palette_c = framebuf_c.FrameBuffer(pal_buf_c, 2, 1, framebuf_c.RGB565)
+    palette_c.pixel(0, 0, bg)
+    palette_c.pixel(1, 0, fg)
 
-        dest_c.blit(src_c, 0, 0, -1, palette_c)
+    dest_c.blit(src_c, 0, 0, -1, palette_c)
 
-        if not compare_buffers(dest_buf_c, dest_buf_py, "MONO_HMSB->RGB565 palette blit"):
-            return False
+    if not compare_buffers(dest_buf_c, dest_buf_py, "MONO_HMSB->RGB565 palette blit"):
+        return False
 
     return True
 
@@ -1588,16 +1483,15 @@ def test_blit_transparency():
     # Blit with transparency (skip 0x00 pixels)
     fbuf_py.blit(src_py, 2, 2, 0x00)
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(w * h)
-        fbuf_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.GS8)
-        fbuf_c.fill(0x55)
+    buf_c = bytearray(w * h)
+    fbuf_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.GS8)
+    fbuf_c.fill(0x55)
 
-        src_c = framebuf.FrameBuffer(bytearray(src_buf), 4, 4, framebuf.GS8)
-        fbuf_c.blit(src_c, 2, 2, 0x00)
+    src_c = framebuf_c.FrameBuffer(bytearray(src_buf), 4, 4, framebuf_c.GS8)
+    fbuf_c.blit(src_c, 2, 2, 0x00)
 
-        if not compare_buffers(buf_c, buf_py, "blit with transparency"):
-            return False
+    if not compare_buffers(buf_c, buf_py, "blit with transparency"):
+        return False
 
     return True
 
@@ -1626,15 +1520,14 @@ def test_blit_mono_vlsb():
                 print(f"❌ Expected pixel({x},{y})=1, got {fbuf_py.pixel(x, y, -1)}")
                 return False
 
-    if HAS_C_FRAMEBUF:
-        buf_c = bytearray(size)
-        fbuf_c = framebuf.FrameBuffer(buf_c, w, h, framebuf.MONO_VLSB)
-        src_c = framebuf.FrameBuffer(bytearray(src_size), 4, 8, framebuf.MONO_VLSB)
-        src_c.fill(1)
-        fbuf_c.blit(src_c, 2, 4)
+    buf_c = bytearray(size)
+    fbuf_c = framebuf_c.FrameBuffer(buf_c, w, h, framebuf_c.MONO_VLSB)
+    src_c = framebuf_c.FrameBuffer(bytearray(src_size), 4, 8, framebuf_c.MONO_VLSB)
+    src_c.fill(1)
+    fbuf_c.blit(src_c, 2, 4)
 
-        if not compare_buffers(buf_c, buf_py, "MONO_VLSB blit"):
-            return False
+    if not compare_buffers(buf_c, buf_py, "MONO_VLSB blit"):
+        return False
 
     return True
 

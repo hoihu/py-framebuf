@@ -5,7 +5,7 @@ This tests the pure Python implementation in isolation,
 without comparing to the C implementation (since we may not have it locally).
 """
 
-import framebuf_pure
+import framebufpy as framebuf_pure
 
 def test_mono_vlsb_basic():
     """Basic MONO_VLSB functionality test"""

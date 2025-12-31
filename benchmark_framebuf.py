@@ -10,7 +10,7 @@ Tests common operations on realistic display sizes:
 
 import time
 import framebuf
-import framebuf_pure
+import framebufpy as framebuf_pure
 
 # Global list to collect all benchmark results
 results = []
