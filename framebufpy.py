@@ -28,6 +28,7 @@ Usage:
 
 import micropython
 from uctypes import addressof
+from font_petme128_8x8 import FONT_PETME128_8X8
 
 # Format constants
 MONO_VLSB = 0
@@ -366,22 +367,6 @@ class FrameBufferBase:
 
                     cx1 += 1
                 y1 += 1
-
-    @micropython.viper
-    def _setpixel_checked(self, x: int, y: int, c: int):
-        """
-        Set pixel with bounds checking (helper for line/ellipse/poly)
-
-        Args:
-            x: X coordinate
-            y: Y coordinate
-            c: Color value
-        """
-        width = int(self.width)
-        height = int(self.height)
-        if 0 <= x < width and 0 <= y < height:
-            self.pixel(x, y, c)
-
     @micropython.viper
     def line(self, x1: int, y1: int, x2: int, y2: int, col: int):
         """
@@ -453,7 +438,56 @@ class FrameBufferBase:
             e += 2 * dy
 
         # Draw final pixel (x2, y2) with bounds checking
-        self._setpixel_checked(x2, y2, col)
+        self.pixel(x2, y2, col)
+
+    @micropython.viper
+    def _render_text(self, text_bytes, text_len: int, font_data, x: int, y: int, col: int):
+        """
+        Render text string (viper-optimized)
+
+        Args:
+            text_bytes: String as bytes
+            text_len: Length of string
+            font_data: Font data bytearray
+            x: Starting X coordinate
+            y: Starting Y coordinate
+            col: Color value
+        """
+        width = int(self.width)
+        height = int(self.height)
+        font = ptr8(font_data)
+        text = ptr8(text_bytes)
+
+        x_pos = x
+
+        # Process each character
+        for i in range(text_len):
+            # Get character code
+            chr_code = int(text[i])
+
+            # Validate range (use checkerboard for invalid chars)
+            if chr_code < 32 or chr_code > 127:
+                chr_code = 127
+
+            # Get font data offset for this character (8 bytes per char)
+            font_offset = (chr_code - 32) * 8
+
+            # Render 8 columns (each character is 8 pixels wide)
+            for j in range(8):
+                x_col = x_pos + j
+                if 0 <= x_col < width:  # Clip X coordinate
+                    # Get column data (vertical line of 8 pixels, LSB at top)
+                    vline_data = int(font[font_offset + j])
+                    y_pixel = y
+
+                    # Scan over vertical column (8 pixels)
+                    for row in range(8):
+                        if vline_data & (1 << row):  # Check if pixel is set
+                            if 0 <= y_pixel < height:  # Clip Y coordinate
+                                self.pixel(x_col, y_pixel, col)
+                        y_pixel += 1
+
+            x_pos += 8  # Move to next character position
 
     def text(self, s, x, y, col=1):
         """
@@ -465,37 +499,9 @@ class FrameBufferBase:
             y: Starting Y coordinate
             col: Color value (default 1)
         """
-        from font_petme128_8x8 import FONT_PETME128_8X8
-
-        width = self.width
-        height = self.height
-        x0 = x
-
-        # Loop over each character
-        for c in s:
-            # Get character code and validate range
-            chr_code = ord(c)
-            if chr_code < 32 or chr_code > 127:
-                chr_code = 127  # Use checkerboard for invalid chars
-
-            # Get font data offset for this character (8 bytes per char)
-            font_offset = (chr_code - 32) * 8
-
-            # Render 8 columns (each character is 8 pixels wide)
-            for j in range(8):
-                if 0 <= x0 < width:  # Clip X coordinate
-                    # Get column data (vertical line of 8 pixels, LSB at top)
-                    vline_data = FONT_PETME128_8X8[font_offset + j]
-                    y_pos = y
-
-                    # Scan over vertical column (8 pixels)
-                    for row in range(8):
-                        if vline_data & (1 << row):  # Check if pixel is set
-                            if 0 <= y_pos < height:  # Clip Y coordinate
-                                self.pixel(x0, y_pos, col)
-                        y_pos += 1
-
-                x0 += 1  # Move to next column
+        # Convert string to bytes for viper processing
+        text_bytes = s.encode('utf-8') if isinstance(s, str) else s
+        self._render_text(text_bytes, len(text_bytes), FONT_PETME128_8X8, x, y, col)
 
     @micropython.viper
     def scroll(self, xstep: int, ystep: int):
@@ -593,13 +599,13 @@ class FrameBufferBase:
         else:
             # Outline mode: draw individual pixels
             if mask & MASK_Q1:
-                self._setpixel_checked(cx + x, cy - y, col)
+                self.pixel(cx + x, cy - y, col)
             if mask & MASK_Q2:
-                self._setpixel_checked(cx - x, cy - y, col)
+                self.pixel(cx - x, cy - y, col)
             if mask & MASK_Q3:
-                self._setpixel_checked(cx - x, cy + y, col)
+                self.pixel(cx - x, cy + y, col)
             if mask & MASK_Q4:
-                self._setpixel_checked(cx + x, cy + y, col)
+                self.pixel(cx + x, cy + y, col)
 
     def ellipse(self, cx, cy, xradius, yradius, col, fill=False, mask=0x0f):
         """
@@ -622,7 +628,7 @@ class FrameBufferBase:
         # Special case: zero radius (single point)
         if xradius == 0 and yradius == 0:
             if ellipse_mask & 0x0f:
-                self._setpixel_checked(cx, cy, col)
+                self.pixel(cx, cy, col)
             return
 
         # Phase 1: Top/bottom arcs (where slope dy/dx > -1)
@@ -748,9 +754,9 @@ class FrameBufferBase:
                     elif row == max(py1, py2):
                         # Handle local minima/maxima to fill missing pixels
                         if py1 < py2:
-                            self._setpixel_checked(x + px2, y + py2, col)
+                            self.pixel(x + px2, y + py2, col)
                         elif py2 < py1:
-                            self._setpixel_checked(x + px1, y + py1, col)
+                            self.pixel(x + px1, y + py1, col)
                         else:
                             # Horizontal edge
                             self.line(x + px1, y + py1, x + px2, y + py2, col)
