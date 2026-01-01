@@ -32,79 +32,19 @@ class FrameBufferMONO_VLSB(FrameBufferBase):
                 buf[index] &= uint(~mask & 0xFF)
             return 0
 
-
     @micropython.viper
-    def hline(self, x: int, y: int, w: int, c: int):
-        """Horizontal line for MONO_VLSB format"""
-        width = int(self.width)
-        height = int(self.height)
+    def _setpixel(self, x: int, y: int, c: int):
+        """Set pixel without bounds checking for MONO_VLSB format"""
         stride = int(self.stride)
-
-        # Bounds check and clip
-        if y < 0 or y >= height or x >= width:
-            return
-
-        if x < 0:
-            w += x
-            x = 0
-
-        if x + w > width:
-            w = width - x
-
-        if w <= 0:
-            return
-
         buf = ptr8(self.buffer)
-        byte_row = uint(y >> 3)
-        bit_offset = uint(y & 7)
-        mask = uint(1 << bit_offset)
-        offset = uint(byte_row * stride + x)
+        index = uint((y >> 3) * stride + x)
+        offset = uint(y & 0x07)
+        mask = uint(1 << offset)
 
         if c:
-            # Set bits
-            for i in range(w):
-                buf[offset + i] |= mask
+            buf[index] |= mask
         else:
-            # Clear bits
-            inv_mask = uint(~mask & 0xFF)
-            for i in range(w):
-                buf[offset + i] &= inv_mask
-
-
-    @micropython.viper
-    def vline(self, x: int, y: int, h: int, c: int):
-        """Vertical line for MONO_VLSB format"""
-        width = int(self.width)
-        height = int(self.height)
-        stride = int(self.stride)
-
-        # Bounds check and clip
-        if x < 0 or x >= width or y >= height:
-            return
-
-        if y < 0:
-            h += y
-            y = 0
-
-        if y + h > height:
-            h = height - y
-
-        if h <= 0:
-            return
-
-        buf = ptr8(self.buffer)
-
-        # Set each pixel in the vertical line
-        for i in range(h):
-            y_pos = y + i
-            byte_offset = uint((y_pos >> 3) * stride + x)
-            bit_offset = uint(y_pos & 7)
-            mask = uint(1 << bit_offset)
-
-            if c:
-                buf[byte_offset] |= mask
-            else:
-                buf[byte_offset] &= uint(~mask & 0xFF)
+            buf[index] &= uint(~mask & 0xFF)
 
 
     @micropython.viper
@@ -133,6 +73,25 @@ class FrameBufferMONO_VLSB(FrameBufferBase):
                 for col in range(width):
                     buf[offset_base + col] &= mask
         else:
-            # Partial rectangle - use hline for each row (matches C implementation)
+            # Partial rectangle - inline optimized row filling
+            buf = ptr8(self.buffer)
+
             for yy in range(h):
-                self.hline(x, y + yy, w, c)
+                py = y + yy
+                byte_row = uint(py >> 3)
+                bit_offset = uint(py & 0x07)
+                mask = uint(1 << bit_offset)
+
+                if c:
+                    # Set bits
+                    for xx in range(w):
+                        px = x + xx
+                        index = uint(byte_row * stride + px)
+                        buf[index] |= mask
+                else:
+                    # Clear bits
+                    inv_mask = uint(~mask & 0xFF)
+                    for xx in range(w):
+                        px = x + xx
+                        index = uint(byte_row * stride + px)
+                        buf[index] &= inv_mask

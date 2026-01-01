@@ -205,13 +205,24 @@ class FrameBufferBase:
         """
         raise NotImplementedError("Subclass must implement pixel()")
 
+    def _setpixel(self, x, y, c):
+        """
+        Set pixel value at (x, y) without bounds checking (internal use only)
+
+        Args:
+            x: X coordinate (must be valid)
+            y: Y coordinate (must be valid)
+            c: Color value
+        """
+        raise NotImplementedError("Subclass must implement _setpixel()")
+
     def hline(self, x, y, w, c):
         """Draw horizontal line starting at (x, y) with width w and color c"""
-        raise NotImplementedError("Subclass must implement hline()")
+        self.fill_rect(x, y, w, 1, c)
 
     def vline(self, x, y, h, c):
         """Draw vertical line starting at (x, y) with height h and color c"""
-        raise NotImplementedError("Subclass must implement vline()")
+        self.fill_rect(x, y, 1, h, c)
 
     def fill(self, c):
         """Fill entire framebuffer with color c"""
@@ -422,11 +433,11 @@ class FrameBufferBase:
             if steep:
                 # Steep line: y is primary axis, so check (y1, x1)
                 if 0 <= y1 < width and 0 <= x1 < height:
-                    self.pixel(y1, x1, col)
+                    self._setpixel(y1, x1, col)
             else:
                 # Shallow line: x is primary axis, so check (x1, y1)
                 if 0 <= x1 < width and 0 <= y1 < height:
-                    self.pixel(x1, y1, col)
+                    self._setpixel(x1, y1, col)
 
             # Update error term and step along secondary axis if needed
             while e >= 0:
@@ -438,7 +449,8 @@ class FrameBufferBase:
             e += 2 * dy
 
         # Draw final pixel (x2, y2) with bounds checking
-        self.pixel(x2, y2, col)
+        if 0 <= x2 < width and 0 <= y2 < height:
+            self._setpixel(x2, y2, col)
 
     @micropython.viper
     def _render_text(self, text_bytes, text_len: int, font_data, x: int, y: int, col: int):

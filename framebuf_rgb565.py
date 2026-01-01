@@ -29,72 +29,13 @@ class FrameBufferRGB565(FrameBufferBase):
             buf[index] = uint(c & 0xFFFF)
             return 0
 
-
     @micropython.viper
-    def hline(self, x: int, y: int, w: int, c: int):
-        """Horizontal line for RGB565 format"""
-        width = int(self.width)
-        height = int(self.height)
+    def _setpixel(self, x: int, y: int, c: int):
+        """Set pixel without bounds checking (internal use only)"""
         stride = int(self.stride)
-
-        # Bounds check and clip
-        if y < 0 or y >= height or x >= width:
-            return
-
-        if x < 0:
-            w += x
-            x = 0
-
-        if x + w > width:
-            w = width - x
-
-        if w <= 0:
-            return
-
-        buf = ptr8(self.buffer)
-        offset = uint((y * stride + x) * 2)
-        c_low = uint(c & 0xFF)
-        c_high = uint((c >> 8) & 0xFF)
-
-        # Write 2 bytes per pixel
-        for i in range(w):
-            idx = offset + (i * 2)
-            buf[idx] = c_low
-            buf[idx + 1] = c_high
-
-
-    @micropython.viper
-    def vline(self, x: int, y: int, h: int, c: int):
-        """Vertical line for RGB565 format"""
-        width = int(self.width)
-        height = int(self.height)
-        stride = int(self.stride)
-
-        # Bounds check and clip
-        if x < 0 or x >= width or y >= height:
-            return
-
-        if y < 0:
-            h += y
-            y = 0
-
-        if y + h > height:
-            h = height - y
-
-        if h <= 0:
-            return
-
-        buf = ptr8(self.buffer)
-        c_low = uint(c & 0xFF)
-        c_high = uint((c >> 8) & 0xFF)
-        row_bytes = uint(stride * 2)
-
-        # Write 2 bytes per pixel, advance by row stride
-        for i in range(h):
-            offset = uint(((y + i) * stride + x) * 2)
-            buf[offset] = c_low
-            buf[offset + 1] = c_high
-
+        buf = ptr16(self.buffer)
+        index = uint(y * stride + x)
+        buf[index] = uint(c & 0xFFFF)
 
     @micropython.viper
     def _fill_rect_impl(self, x: int, y: int, w: int, h: int, c: int):

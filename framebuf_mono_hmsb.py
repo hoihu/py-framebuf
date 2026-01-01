@@ -32,118 +32,19 @@ class FrameBufferMONO_HMSB(FrameBufferBase):
                 buf[index] &= uint(~(1 << offset) & 0xFF)
             return 0
 
-
     @micropython.viper
-    def hline(self, x: int, y: int, w: int, c: int):
-        """Horizontal line for MONO_HMSB format - handles byte spanning"""
-        width = int(self.width)
-        height = int(self.height)
+    def _setpixel(self, x: int, y: int, c: int):
+        """Set pixel without bounds checking for MONO_HMSB format"""
         stride = int(self.stride)
-
-        # Bounds check and clip
-        if y < 0 or y >= height or x >= width:
-            return
-
-        if x < 0:
-            w += x
-            x = 0
-
-        if x + w > width:
-            w = width - x
-
-        if w <= 0:
-            return
-
         buf = ptr8(self.buffer)
         bytes_per_row = uint((stride + 7) >> 3)
-        row_offset = uint(y * bytes_per_row)
-
-        # Calculate byte and bit positions
-        start_byte = uint(x >> 3)
-        start_bit = uint(x & 7)
-        end_pos = x + w - 1
-        end_byte = uint(end_pos >> 3)
+        index = uint(y * bytes_per_row + (x >> 3))
+        offset = uint(x & 0x07)  # HMSB: bit 0 is leftmost
 
         if c:
-            # Set pixels
-            if start_byte == end_byte:
-                # All pixels in one byte
-                for i in range(w):
-                    bit = uint((x + i) & 7)
-                    buf[row_offset + start_byte] |= uint(1 << bit)
-            else:
-                # Handle first partial byte
-                for i in range(8 - start_bit):
-                    bit = uint((x + i) & 7)
-                    buf[row_offset + start_byte] |= uint(1 << bit)
-
-                # Handle full bytes in the middle
-                for byte_idx in range(start_byte + 1, end_byte):
-                    buf[row_offset + byte_idx] = 0xFF
-
-                # Handle last partial byte
-                end_bit = int(end_pos & 7)
-                for i in range(end_bit + 1):
-                    buf[row_offset + end_byte] |= uint(1 << i)
+            buf[index] |= uint(1 << offset)
         else:
-            # Clear pixels
-            if start_byte == end_byte:
-                # All pixels in one byte
-                for i in range(w):
-                    bit = uint((x + i) & 7)
-                    buf[row_offset + start_byte] &= uint(~(1 << bit) & 0xFF)
-            else:
-                # Handle first partial byte
-                for i in range(8 - start_bit):
-                    bit = uint((x + i) & 7)
-                    buf[row_offset + start_byte] &= uint(~(1 << bit) & 0xFF)
-
-                # Handle full bytes in the middle
-                for byte_idx in range(start_byte + 1, end_byte):
-                    buf[row_offset + byte_idx] = 0x00
-
-                # Handle last partial byte
-                end_bit = int(end_pos & 7)
-                for i in range(end_bit + 1):
-                    buf[row_offset + end_byte] &= uint(~(1 << i) & 0xFF)
-
-
-    @micropython.viper
-    def vline(self, x: int, y: int, h: int, c: int):
-        """Vertical line for MONO_HMSB format"""
-        width = int(self.width)
-        height = int(self.height)
-        stride = int(self.stride)
-
-        # Bounds check and clip
-        if x < 0 or x >= width or y >= height:
-            return
-
-        if y < 0:
-            h += y
-            y = 0
-
-        if y + h > height:
-            h = height - y
-
-        if h <= 0:
-            return
-
-        buf = ptr8(self.buffer)
-        bytes_per_row = uint((stride + 7) >> 3)
-        byte_in_row = uint(x >> 3)
-        bit_offset = uint(x & 7)
-        mask = uint(1 << bit_offset)
-
-        if c:
-            for i in range(h):
-                row_offset = uint((y + i) * bytes_per_row)
-                buf[row_offset + byte_in_row] |= mask
-        else:
-            inv_mask = uint(~mask & 0xFF)
-            for i in range(h):
-                row_offset = uint((y + i) * bytes_per_row)
-                buf[row_offset + byte_in_row] &= inv_mask
+            buf[index] &= uint(~(1 << offset) & 0xFF)
 
 
     @micropython.viper
@@ -179,6 +80,19 @@ class FrameBufferMONO_HMSB(FrameBufferBase):
                 for i in range(total_bytes):
                     buf[i] = fill_byte
         else:
-            # Partial rectangle - use hline for each row
+            # Partial rectangle - inline optimized row filling
+            buf = ptr8(self.buffer)
+            stride = int(self.stride)
+
             for yy in range(h):
-                self.hline(x, y + yy, w, c)
+                py = y + yy
+                # For HMSB: horizontal packing, bit 0 is leftmost
+                for xx in range(w):
+                    px = x + xx
+                    byte_index = uint(py * ((stride + 7) >> 3) + (px >> 3))
+                    bit_offset = uint(px & 0x07)  # Bit 0 is pixel 0
+
+                    if c:
+                        buf[byte_index] |= uint(1 << bit_offset)
+                    else:
+                        buf[byte_index] &= uint(~(1 << bit_offset) & 0xFF)
