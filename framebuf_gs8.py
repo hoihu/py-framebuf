@@ -114,3 +114,73 @@ class FrameBufferGS8(FrameBufferBase):
                     cx0 += 1
                 y1 += 1
                 cy0 += 1
+
+    @micropython.viper
+    def scroll(self, xstep: int, ystep: int):
+        """
+        Optimized scroll for GS8 format using direct 8-bit buffer access
+
+        Args:
+            xstep: Horizontal scroll distance (positive = right, negative = left)
+            ystep: Vertical scroll distance (positive = down, negative = up)
+        """
+        width = int(self.width)
+        height = int(self.height)
+        stride = int(self.stride)
+
+        # Early return if scroll distance >= dimension
+        if xstep < 0:
+            if -xstep >= width:
+                return
+        else:
+            if xstep >= width:
+                return
+
+        if ystep < 0:
+            if -ystep >= height:
+                return
+        else:
+            if ystep >= height:
+                return
+
+        # Direct buffer access
+        buf = ptr8(self.buffer)
+
+        # Determine X iteration direction
+        if xstep < 0:
+            # Scrolling left: iterate left-to-right
+            sx = 0
+            xend = width + xstep
+            dx = 1
+        else:
+            # Scrolling right: iterate right-to-left
+            sx = width - 1
+            xend = xstep - 1
+            dx = -1
+
+        # Determine Y iteration direction
+        if ystep < 0:
+            # Scrolling up: iterate top-to-bottom
+            sy = 0
+            yend = height + ystep
+            dy = 1
+        else:
+            # Scrolling down: iterate bottom-to-top
+            sy = height - 1
+            yend = ystep - 1
+            dy = -1
+
+        # Copy pixels from (x-xstep, y-ystep) to (x, y)
+        y = sy
+        while y != yend:
+            x = sx
+            src_row_offset = uint((y - ystep) * stride)
+            dst_row_offset = uint(y * stride)
+
+            while x != xend:
+                # Direct 8-bit copy
+                src_index = src_row_offset + uint(x - xstep)
+                dst_index = dst_row_offset + uint(x)
+                buf[dst_index] = buf[src_index]
+                x += dx
+            y += dy
