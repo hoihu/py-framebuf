@@ -378,6 +378,7 @@ class FrameBufferBase:
 
                     cx1 += 1
                 y1 += 1
+
     @micropython.viper
     def line(self, x1: int, y1: int, x2: int, y2: int, col: int):
         """
@@ -496,7 +497,7 @@ class FrameBufferBase:
                     for row in range(8):
                         if vline_data & (1 << row):  # Check if pixel is set
                             if 0 <= y_pixel < height:  # Clip Y coordinate
-                                self.pixel(x_col, y_pixel, col)
+                                self._setpixel(x_col, y_pixel, col)
                         y_pixel += 1
 
             x_pos += 8  # Move to next character position
