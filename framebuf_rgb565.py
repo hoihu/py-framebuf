@@ -84,38 +84,25 @@ class FrameBufferRGB565(FrameBufferBase):
         dst_buf = ptr16(self.buffer)
         s_buf = ptr16(src_buf)
 
-        # Blit loop - optimized with direct 16-bit access
-        if key == -1:
-            # Fast path: no transparency
-            cy0: int = y0
-            while cy0 < y0end:
-                dst_offset = uint(cy0 * stride + x0)
-                src_offset = uint(y1 * src_stride + x1)
-                cx0: int = x0
-                while cx0 < x0end:
-                    dst_buf[dst_offset] = s_buf[src_offset]
-                    dst_offset += 1
-                    src_offset += 1
-                    cx0 += 1
-                y1 += 1
-                cy0 += 1
-        else:
-            # With transparency check
-            key_val: int = key & 0xFFFF
-            cy0: int = y0
-            while cy0 < y0end:
-                dst_offset = uint(cy0 * stride + x0)
-                src_offset = uint(y1 * src_stride + x1)
-                cx0: int = x0
-                while cx0 < x0end:
-                    col_val: int = int(s_buf[src_offset])
-                    if col_val != key_val:
-                        dst_buf[dst_offset] = uint(col_val)
-                    dst_offset += 1
-                    src_offset += 1
-                    cx0 += 1
-                y1 += 1
-                cy0 += 1
+        # Unified blit loop with transparency handling
+        # Use sentinel value 0x10000 for key=-1 (impossible RGB565 value)
+        # This ensures col_val != key_val is always true when no transparency
+        key_val: int = 0x10000 if key == -1 else (key & 0xFFFF)
+
+        cy0: int = y0
+        while cy0 < y0end:
+            dst_offset = uint(cy0 * stride + x0)
+            src_offset = uint(y1 * src_stride + x1)
+            cx0: int = x0
+            while cx0 < x0end:
+                col_val: int = int(s_buf[src_offset])
+                if col_val != key_val:
+                    dst_buf[dst_offset] = uint(col_val)
+                dst_offset += 1
+                src_offset += 1
+                cx0 += 1
+            y1 += 1
+            cy0 += 1
 
     @micropython.viper
     def _blit_mono_hmsb_palette(self, src_buf, src_w: int, src_h: int, src_stride: int,
@@ -150,62 +137,38 @@ class FrameBufferRGB565(FrameBufferBase):
         # Calculate source stride in bytes (each byte holds 8 horizontal pixels)
         src_stride_bytes: int = (src_stride + 7) >> 3
 
-        if key == -1:
-            # Fast path: no transparency
-            cy0: int = y0
-            while cy0 < y0end:
-                cx1: int = x1
-                cx0: int = x0
-                dst_offset = uint(cy0 * stride + x0)
+        # Unified blit loop with transparency handling
+        # Use sentinel value 0x10000 for key=-1 (impossible RGB565 value)
+        # This ensures color != key_val is always true when no transparency
+        key_val: int = 0x10000 if key == -1 else (key & 0xFFFF)
 
-                while cx0 < x0end:
-                    # Calculate source byte and bit position
-                    byte_offset: int = y1 * src_stride_bytes + (cx1 >> 3)
-                    bit_offset: int = cx1 & 7  # HMSB: bit 0 is leftmost
+        cy0: int = y0
+        while cy0 < y0end:
+            cx1: int = x1
+            cx0: int = x0
+            dst_offset = uint(cy0 * stride + x0)
 
-                    # Extract bit value
-                    byte_val: int = int(s_buf[byte_offset])
-                    bit_val: int = (byte_val >> bit_offset) & 1
+            while cx0 < x0end:
+                # Calculate source byte and bit position
+                byte_offset: int = y1 * src_stride_bytes + (cx1 >> 3)
+                bit_offset: int = cx1 & 7  # HMSB: bit 0 is leftmost
 
-                    # Map to palette color
-                    color: int = pal1 if bit_val else pal0
+                # Extract bit value
+                byte_val: int = int(s_buf[byte_offset])
+                bit_val: int = (byte_val >> bit_offset) & 1
+
+                # Map to palette color
+                color: int = pal1 if bit_val else pal0
+
+                # Write if not transparent
+                if color != key_val:
                     dst_buf[dst_offset] = uint(color)
 
-                    dst_offset += 1
-                    cx1 += 1
-                    cx0 += 1
-                y1 += 1
-                cy0 += 1
-        else:
-            # With transparency
-            key_val: int = key & 0xFFFF
-            cy0: int = y0
-            while cy0 < y0end:
-                cx1: int = x1
-                cx0: int = x0
-                dst_offset = uint(cy0 * stride + x0)
-
-                while cx0 < x0end:
-                    # Calculate source byte and bit position
-                    byte_offset: int = y1 * src_stride_bytes + (cx1 >> 3)
-                    bit_offset: int = cx1 & 7  # HMSB: bit 0 is leftmost
-
-                    # Extract bit value
-                    byte_val: int = int(s_buf[byte_offset])
-                    bit_val: int = (byte_val >> bit_offset) & 1
-
-                    # Map to palette color
-                    color: int = pal1 if bit_val else pal0
-
-                    # Only write if not transparent
-                    if color != key_val:
-                        dst_buf[dst_offset] = uint(color)
-
-                    dst_offset += 1
-                    cx1 += 1
-                    cx0 += 1
-                y1 += 1
-                cy0 += 1
+                dst_offset += 1
+                cx1 += 1
+                cx0 += 1
+            y1 += 1
+            cy0 += 1
 
     @micropython.viper
     def scroll(self, xstep: int, ystep: int):

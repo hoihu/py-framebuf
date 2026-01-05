@@ -517,7 +517,7 @@ class FrameBufferBase:
         self._render_text(text_bytes, len(text_bytes), FONT_PETME128_8X8, x, y, col)
 
     @micropython.viper
-    def scroll(self, xstep: int, ystep: int):
+    def scroll(self, xstep, ystep):
         """
         Scroll the framebuffer by xstep and ystep pixels
 
@@ -525,55 +525,58 @@ class FrameBufferBase:
             xstep: Horizontal scroll distance (positive = right, negative = left)
             ystep: Vertical scroll distance (positive = down, negative = up)
         """
+        # Cast parameters to proper int type
+        xs: int = int(xstep)
+        ys: int = int(ystep)
         width = int(self.width)
         height = int(self.height)
 
         # Early return if scroll distance >= dimension
-        if xstep < 0:
-            if -xstep >= width:
+        if xs < 0:
+            if -xs >= width:
                 return
         else:
-            if xstep >= width:
+            if xs >= width:
                 return
 
-        if ystep < 0:
-            if -ystep >= height:
+        if ys < 0:
+            if -ys >= height:
                 return
         else:
-            if ystep >= height:
+            if ys >= height:
                 return
 
         # Determine X iteration direction
-        if xstep < 0:
+        if xs < 0:
             # Scrolling left: iterate left-to-right
             sx = 0
-            xend = width + xstep
+            xend = width + xs
             dx = 1
         else:
             # Scrolling right: iterate right-to-left
             sx = width - 1
-            xend = xstep - 1
+            xend = xs - 1
             dx = -1
 
         # Determine Y iteration direction
-        if ystep < 0:
+        if ys < 0:
             # Scrolling up: iterate top-to-bottom
             sy = 0
-            yend = height + ystep
+            yend = height + ys
             dy = 1
         else:
             # Scrolling down: iterate bottom-to-top
             sy = height - 1
-            yend = ystep - 1
+            yend = ys - 1
             dy = -1
 
-        # Copy pixels from (x-xstep, y-ystep) to (x, y)
+        # Copy pixels from (x-xs, y-ys) to (x, y)
         y = sy
         while y != yend:
             x = sx
             while x != xend:
                 # Get pixel from source position
-                col = self.pixel(x - xstep, y - ystep, -1)
+                col = self.pixel(x - xs, y - ys, -1)
                 # Set pixel at destination position
                 self.pixel(x, y, col)
                 x += dx

@@ -125,8 +125,38 @@ fb_c.scroll(0, 2)
 fb_py.scroll(0, 2)
 compare_buffers(buf_c, buf_py, "scroll() down")
 
-# Test 8: ellipse() - circle
-print("\n=== Test 8: ellipse() - circle ===")
+# Test 8: scroll() - scroll left
+print("\n=== Test 8: scroll() - left ===")
+buf_c = bytearray(40)
+fb_c = framebuf_c.FrameBuffer(buf_c, 10, 10, framebuf_c.MONO_VLSB)
+buf_py = bytearray(40)
+fb_py = framebuf_py.FrameBuffer(buf_py, 10, 10, framebuf_py.MONO_VLSB)
+
+# Draw a pattern on the right side
+fb_c.fill_rect(5, 0, 5, 5, 1)
+fb_py.fill_rect(5, 0, 5, 5, 1)
+# Scroll left
+fb_c.scroll(-2, 0)
+fb_py.scroll(-2, 0)
+compare_buffers(buf_c, buf_py, "scroll() left")
+
+# Test 9: scroll() - scroll up
+print("\n=== Test 9: scroll() - up ===")
+buf_c = bytearray(40)
+fb_c = framebuf_c.FrameBuffer(buf_c, 10, 10, framebuf_c.MONO_VLSB)
+buf_py = bytearray(40)
+fb_py = framebuf_py.FrameBuffer(buf_py, 10, 10, framebuf_py.MONO_VLSB)
+
+# Draw a pattern on the bottom
+fb_c.fill_rect(0, 5, 5, 5, 1)
+fb_py.fill_rect(0, 5, 5, 5, 1)
+# Scroll up
+fb_c.scroll(0, -2)
+fb_py.scroll(0, -2)
+compare_buffers(buf_c, buf_py, "scroll() up")
+
+# Test 10: ellipse() - circle
+print("\n=== Test 10: ellipse() - circle ===")
 buf_c = bytearray(80)
 fb_c = framebuf_c.FrameBuffer(buf_c, 20, 20, framebuf_c.MONO_VLSB)
 buf_py = bytearray(80)
@@ -136,8 +166,8 @@ fb_c.ellipse(10, 10, 5, 5, 1)
 fb_py.ellipse(10, 10, 5, 5, 1)
 compare_buffers(buf_c, buf_py, "ellipse() circle outline")
 
-# Test 9: ellipse() - filled ellipse
-print("\n=== Test 9: ellipse() - filled ===")
+# Test 11: ellipse() - filled ellipse
+print("\n=== Test 11: ellipse() - filled ===")
 buf_c = bytearray(80)
 fb_c = framebuf_c.FrameBuffer(buf_c, 20, 20, framebuf_c.MONO_VLSB)
 buf_py = bytearray(80)
@@ -147,8 +177,8 @@ fb_c.ellipse(10, 10, 6, 4, 1, True)
 fb_py.ellipse(10, 10, 6, 4, 1, True)
 compare_buffers(buf_c, buf_py, "ellipse() filled")
 
-# Test 10: poly() - triangle outline
-print("\n=== Test 10: poly() - triangle outline ===")
+# Test 12: poly() - triangle outline
+print("\n=== Test 12: poly() - triangle outline ===")
 buf_c = bytearray(80)
 fb_c = framebuf_c.FrameBuffer(buf_c, 20, 20, framebuf_c.MONO_VLSB)
 buf_py = bytearray(80)
@@ -160,8 +190,8 @@ fb_c.poly(5, 5, coords, 1)
 fb_py.poly(5, 5, coords, 1)
 compare_buffers(buf_c, buf_py, "poly() triangle outline")
 
-# Test 11: poly() - filled triangle
-print("\n=== Test 11: poly() - triangle filled ===")
+# Test 13: poly() - filled triangle
+print("\n=== Test 13: poly() - triangle filled ===")
 buf_c = bytearray(80)
 fb_c = framebuf_c.FrameBuffer(buf_c, 20, 20, framebuf_c.MONO_VLSB)
 buf_py = bytearray(80)
@@ -172,8 +202,8 @@ fb_c.poly(5, 5, coords, 1, True)
 fb_py.poly(5, 5, coords, 1, True)
 compare_buffers(buf_c, buf_py, "poly() triangle filled")
 
-# Test 12: poly() - square filled
-print("\n=== Test 12: poly() - square filled ===")
+# Test 14: poly() - square filled
+print("\n=== Test 14: poly() - square filled ===")
 buf_c = bytearray(80)
 fb_c = framebuf_c.FrameBuffer(buf_c, 20, 20, framebuf_c.MONO_VLSB)
 buf_py = bytearray(80)
