@@ -619,6 +619,7 @@ class FrameBufferBase:
             if mask & MASK_Q4:
                 self.pixel(cx + x, cy + y, col)
 
+    @micropython.native
     def ellipse(self, cx, cy, xradius, yradius, col, fill=False, mask=0x0f):
         """
         Draw an ellipse using the midpoint ellipse algorithm
@@ -687,6 +688,8 @@ class FrameBufferBase:
                 ellipse_error += ychange
                 ychange += two_asquare
 
+
+    @micropython.native
     def poly(self, x, y, coords, col, fill=False):
         """
         Draw a polygon outline or filled polygon
