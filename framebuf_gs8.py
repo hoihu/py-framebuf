@@ -82,38 +82,25 @@ class FrameBufferGS8(FrameBufferBase):
         dst_buf = ptr8(self.buffer)
         s_buf = ptr8(src_buf)
 
-        # Blit loop - optimized with direct 8-bit access
-        if key == -1:
-            # Fast path: no transparency
-            cy0: int = y0
-            while cy0 < y0end:
-                dst_offset = uint(cy0 * stride + x0)
-                src_offset = uint(y1 * src_stride + x1)
-                cx0: int = x0
-                while cx0 < x0end:
-                    dst_buf[dst_offset] = s_buf[src_offset]
-                    dst_offset += 1
-                    src_offset += 1
-                    cx0 += 1
-                y1 += 1
-                cy0 += 1
-        else:
-            # With transparency check
-            key_val: int = key & 0xFF
-            cy0: int = y0
-            while cy0 < y0end:
-                dst_offset = uint(cy0 * stride + x0)
-                src_offset = uint(y1 * src_stride + x1)
-                cx0: int = x0
-                while cx0 < x0end:
-                    col_val: int = int(s_buf[src_offset])
-                    if col_val != key_val:
-                        dst_buf[dst_offset] = uint(col_val)
-                    dst_offset += 1
-                    src_offset += 1
-                    cx0 += 1
-                y1 += 1
-                cy0 += 1
+        # Unified blit loop with transparency handling
+        # Use sentinel value 0x100 for key=-1 (impossible GS8 value)
+        # This ensures col_val != key_val is always true when no transparency
+        key_val: int = 0x100 if key == -1 else (key & 0xFF)
+
+        cy0: int = y0
+        while cy0 < y0end:
+            dst_offset = uint(cy0 * stride + x0)
+            src_offset = uint(y1 * src_stride + x1)
+            cx0: int = x0
+            while cx0 < x0end:
+                col_val: int = int(s_buf[src_offset])
+                if col_val != key_val:
+                    dst_buf[dst_offset] = uint(col_val)
+                dst_offset += 1
+                src_offset += 1
+                cx0 += 1
+            y1 += 1
+            cy0 += 1
 
     @micropython.viper
     def scroll(self, xstep: int, ystep: int):
